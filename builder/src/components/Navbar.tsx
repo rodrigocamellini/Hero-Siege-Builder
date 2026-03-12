@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { Search, Menu, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -114,7 +114,9 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
             <Search className="w-5 h-5 text-brand-darker" />
           </button>
 
-          <UserMenu />
+          <Suspense fallback={<div className="w-10 h-10 rounded-lg bg-brand-bg border border-brand-dark/10 animate-pulse hidden sm:block" />}>
+            <UserMenu />
+          </Suspense>
 
           <button
             onClick={() => {

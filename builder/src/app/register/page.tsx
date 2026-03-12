@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { RegisterForm } from '../../features/auth/RegisterForm';
 
@@ -13,7 +14,9 @@ export default function Page() {
           </div>
         </div>
 
-        <RegisterForm />
+        <Suspense fallback={<div className="w-full max-w-md bg-white border border-brand-dark/10 rounded-2xl p-6" />}>
+          <RegisterForm />
+        </Suspense>
 
         <div className="text-center text-xs text-brand-darker/60">
           Already have an account? <Link href="/login" className="text-brand-orange font-bold hover:underline">Sign in</Link>
