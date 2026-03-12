@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "node ./scripts/prisma-env.mjs generate && next build",
-    "start": "node -e \"const {spawn}=require('child_process'); const port=process.env.PORT||3000; const child=spawn(process.execPath,['./node_modules/next/dist/bin/next','start','-p',String(port)],{stdio:'inherit'}); child.on('exit',c=>process.exit(c??1));\"",
+    "start": "node ./scripts/start.mjs",
     "lint": "tsc --noEmit",
     "prisma:generate": "node ./scripts/prisma-env.mjs generate",
     "prisma:migrate:dev": "node ./scripts/prisma-env.mjs migrate dev",
