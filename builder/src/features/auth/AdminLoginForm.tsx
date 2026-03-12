@@ -74,7 +74,7 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!res.ok || !data?.ok) {
-        setError(data?.error ?? 'Login ou senha incorretos');
+        setError(data?.error ?? 'Incorrect email or password');
         return;
       }
 
@@ -85,7 +85,7 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
       router.replace(redirectTo);
       router.refresh();
     } catch {
-      setError('Falha de conexão. Verifique sua internet e tente novamente.');
+      setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -112,11 +112,11 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
           onChange={(e) => setSaveEmail(e.target.checked)}
           className="accent-brand-orange"
         />
-        Salvar email neste dispositivo
+        Remember email on this device
       </label>
 
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Senha</label>
+        <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Password</label>
         <div className="relative">
           <input
             value={password}
@@ -130,8 +130,8 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
             type="button"
             onClick={() => setShowPassword((v) => !v)}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-white/60 transition-colors text-brand-dark/50 hover:text-brand-darker"
-            aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-            title={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            title={showPassword ? 'Hide password' : 'Show password'}
           >
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
@@ -145,7 +145,7 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
           onChange={(e) => setRemember(e.target.checked)}
           className="accent-brand-orange"
         />
-        Lembrar meu acesso neste dispositivo
+        Remember me on this device
       </label>
 
       {error ? <div className="text-xs font-bold text-red-600">{error}</div> : null}
@@ -155,7 +155,7 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
         disabled={loading}
         className="orange-button w-full py-3 text-[10px] tracking-[0.2em] disabled:opacity-60"
       >
-        {loading ? 'Entrando...' : 'Entrar no Painel'}
+        {loading ? 'Signing in...' : 'Sign in to Panel'}
       </button>
     </form>
   );

@@ -18,20 +18,20 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
       label: t.nav[1],
       href: '#',
       children: [
-        { label: t.nav[2], href: '#' },
-        { label: t.nav[3], href: '#' },
+        { label: t.nav[2], href: '/database/classes' },
+        { label: t.nav[3], href: '/database/items' },
       ],
     },
     {
       label: t.nav[4],
       href: '#',
       children: [
-        { label: 'Ether', href: '#', badge: 'New' },
-        { label: 'Incarnation', href: '#', badge: 'New' },
+        { label: 'Ether', href: '/tree/ether', badge: 'New' },
+        { label: 'Incarnation', href: '/tree/incarnation', badge: 'New' },
       ],
     },
-    { label: t.nav[5], href: '#' },
-    { label: t.nav[6], href: '#' },
+    { label: t.nav[5], href: '/blog' },
+    { label: t.nav[6], href: '/contact' },
   ];
 
   return (

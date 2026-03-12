@@ -3,7 +3,7 @@ export type Language = 'en' | 'pt' | 'ru';
 export const translations = {
   en: {
     nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Contact'],
-    heroTitle: 'New Class Spotlight <span class="text-brand-orange">The Prophet</span>',
+    heroTitle: 'New Class Spotlight<br/><span class="text-brand-orange">The&nbsp;Prophet</span>',
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
     popularClasses: 'Latest News',
@@ -53,7 +53,7 @@ export const translations = {
   },
   pt: {
     nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Contact'],
-    heroTitle: 'New Class Spotlight <span class="text-brand-orange">The Prophet</span>',
+    heroTitle: 'New Class Spotlight<br/><span class="text-brand-orange">The&nbsp;Prophet</span>',
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
     popularClasses: 'Latest News',

@@ -7,7 +7,11 @@ import type { Translation } from '../i18n/translations';
 export function Footer({ t, currentYear }: { t: Translation; currentYear: number }) {
   function getHrefByIndex(idx: number) {
     if (idx === 0) return '/';
-    return '#';
+    if (idx === 1) return '/database';
+    if (idx === 2) return '/tree';
+    if (idx === 3) return '/blog';
+    if (idx === 4) return '/contact';
+    return '/';
   }
 
   return (

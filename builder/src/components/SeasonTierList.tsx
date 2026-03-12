@@ -1,8 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { Translation } from '../i18n/translations';
-
-type Tier = 'S' | 'A' | 'B' | 'C' | 'D' | 'E';
+import { getClassDisplayName, tierOrder, type Tier } from '../data/tierlist';
 
 const tierColors: Record<Tier, { border: string; bg: string; solid: string }> = {
   S: { border: 'border-red-500/30', bg: 'bg-red-500/10', solid: 'bg-red-500' },
@@ -13,38 +13,7 @@ const tierColors: Record<Tier, { border: string; bg: string; solid: string }> = 
   E: { border: 'border-brand-dark/15', bg: 'bg-brand-dark/5', solid: 'bg-brand-dark/40' },
 };
 
-const classNames: Record<string, string> = {
-  amazon: 'Amazon',
-  bard: 'Bard',
-  butcher: 'Butcher',
-  demonspawn: 'Demonspawn',
-  demonslayer: 'Demon Slayer',
-  exo: 'Exo',
-  illusionist: 'Illusionist',
-  jotunn: 'Jötunn',
-  marauder: 'Marauder',
-  marksman: 'Marksman',
-  necromancer: 'Necromancer',
-  nomad: 'Nomad',
-  paladin: 'Paladin',
-  pirate: 'Pirate',
-  plaguedoctor: 'Plague Doctor',
-  prophet: 'Prophet',
-  pyromancer: 'Pyromancer',
-  redneck: 'Redneck',
-  samurai: 'Samurai',
-  shaman: 'Shaman',
-  shieldlancer: 'Shield Lancer',
-  stormweaver: 'Stormweaver',
-  viking: 'Viking',
-  whitemage: 'White Mage',
-};
-
-function getClassDisplayName(cls: string) {
-  return classNames[cls] ?? cls;
-}
-
-const tiers: Array<{ tier: Tier; classes: string[] }> = [
+const defaultTiers: Array<{ tier: Tier; classes: string[] }> = [
   { tier: 'S', classes: ['stormweaver', 'demonslayer', 'jotunn', 'viking', 'prophet'] },
   { tier: 'A', classes: ['samurai', 'paladin', 'marksman', 'nomad', 'amazon', 'pyromancer', 'demonspawn'] },
   { tier: 'B', classes: ['redneck', 'pirate', 'shieldlancer', 'marauder', 'plaguedoctor', 'bard'] },
@@ -54,6 +23,19 @@ const tiers: Array<{ tier: Tier; classes: string[] }> = [
 ];
 
 export function SeasonTierList({ t }: { t: Translation }) {
+  const [tiers, setTiers] = useState(defaultTiers);
+
+  useEffect(() => {
+    const load = async () => {
+      const res = await fetch('/api/tierlist/aggregate', { method: 'GET' });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; tiers?: Record<Tier, string[]>; voters?: number } | null;
+      if (!res.ok || !data?.ok || !data.tiers || typeof data.voters !== 'number') return;
+      if (data.voters <= 0) return;
+      setTiers(tierOrder.map((tier) => ({ tier, classes: data.tiers![tier] ?? [] })));
+    };
+    void load();
+  }, []);
+
   return (
     <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
       <div className="flex items-start justify-between gap-4">

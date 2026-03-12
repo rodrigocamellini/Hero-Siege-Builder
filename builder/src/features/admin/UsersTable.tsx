@@ -31,6 +31,11 @@ export function UsersTable() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const [registrationEnabled, setRegistrationEnabled] = useState(true);
+  const [registrationLoading, setRegistrationLoading] = useState(true);
+  const [registrationSaving, setRegistrationSaving] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+
   const rows = useMemo(() => items, [items]);
 
   async function load() {
@@ -40,7 +45,7 @@ export function UsersTable() {
       const res = await fetch('/api/admin/users', { method: 'GET' });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; users?: UserRow[]; error?: string } | null;
       if (!res.ok || !data?.ok || !Array.isArray(data.users)) {
-        setError(data?.error ?? 'Falha ao carregar usuários');
+        setError(data?.error ?? 'Failed to load users');
         return;
       }
       setItems(data.users);
@@ -52,6 +57,45 @@ export function UsersTable() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const loadRegistration = async () => {
+      setRegistrationError(null);
+      setRegistrationLoading(true);
+      try {
+        const res = await fetch('/api/admin/settings/registration', { method: 'GET' });
+        const data = (await res.json().catch(() => null)) as { ok?: boolean; enabled?: boolean; error?: string } | null;
+        if (!res.ok || !data?.ok) {
+          setRegistrationError(data?.error ?? 'Failed to load settings');
+          return;
+        }
+        setRegistrationEnabled(data?.enabled !== false);
+      } finally {
+        setRegistrationLoading(false);
+      }
+    };
+    void loadRegistration();
+  }, []);
+
+  async function saveRegistration(enabled: boolean) {
+    setRegistrationError(null);
+    setRegistrationSaving(true);
+    try {
+      const res = await fetch('/api/admin/settings/registration', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; enabled?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) {
+        setRegistrationError(data?.error ?? 'Failed to save settings');
+        return;
+      }
+      setRegistrationEnabled(data.enabled !== false);
+    } finally {
+      setRegistrationSaving(false);
+    }
+  }
 
   function openEdit(u: UserRow) {
     setEditError(null);
@@ -90,7 +134,7 @@ export function UsersTable() {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; user?: UserRow } | null;
       if (!res.ok || !data?.ok || !data.user) {
-        setEditError(data?.error ?? 'Falha ao salvar');
+        setEditError(data?.error ?? 'Failed to save');
         return;
       }
       setItems((prev) => prev.map((u) => (u.id === editing.id ? data.user! : u)));
@@ -125,7 +169,7 @@ export function UsersTable() {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!res.ok || !data?.ok) {
-        setDeleteError(data?.error ?? 'Falha ao deletar');
+        setDeleteError(data?.error ?? 'Failed to delete');
         return;
       }
       setItems((prev) => prev.filter((u) => u.id !== deleting.id));
@@ -139,20 +183,33 @@ export function UsersTable() {
     <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
       <div className="p-6 flex items-center justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="font-heading font-bold text-xl uppercase tracking-tight text-brand-darker">Usuários</h2>
-          <div className="text-xs text-brand-darker/60">Gerencie roles do sistema.</div>
+          <h2 className="font-heading font-bold text-xl uppercase tracking-tight text-brand-darker">Users</h2>
+          <div className="text-xs text-brand-darker/60">Manage system roles.</div>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="bg-brand-bg border border-brand-dark/10 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest text-brand-darker hover:border-brand-orange transition-colors"
-          disabled={loading}
-        >
-          {loading ? 'Carregando...' : 'Recarregar'}
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-widest text-brand-darker/70 select-none">
+            <input
+              type="checkbox"
+              className="accent-brand-orange"
+              checked={registrationEnabled}
+              disabled={registrationLoading || registrationSaving}
+              onChange={(e) => void saveRegistration(e.target.checked)}
+            />
+            Allow registrations
+          </label>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="bg-brand-bg border border-brand-dark/10 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest text-brand-darker hover:border-brand-orange transition-colors"
+            disabled={loading}
+          >
+            {loading ? 'Loading...' : 'Reload'}
+          </button>
+        </div>
       </div>
 
       {error ? <div className="px-6 pb-4 text-xs font-bold text-red-600">{error}</div> : null}
+      {registrationError ? <div className="px-6 pb-4 text-xs font-bold text-red-600">{registrationError}</div> : null}
 
       <div className="overflow-x-auto">
         <table className="w-full text-left">
@@ -161,23 +218,23 @@ export function UsersTable() {
               <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Foto</th>
               <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Nick</th>
               <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Email</th>
-              <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Nome</th>
+              <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Name</th>
               <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Role</th>
-              <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Criado</th>
-              <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60 text-right">Ações</th>
+              <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Created</th>
+              <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-brand-dark/10">
             {loading ? (
               <tr>
                 <td className="px-6 py-6 text-sm text-brand-darker/60" colSpan={7}>
-                  Carregando...
+                  Loading...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td className="px-6 py-6 text-sm text-brand-darker/60" colSpan={7}>
-                  Nenhum usuário encontrado.
+                  No users found.
                 </td>
               </tr>
             ) : (
@@ -206,7 +263,7 @@ export function UsersTable() {
                           className="bg-brand-bg border border-brand-dark/10 px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-widest text-brand-darker hover:border-brand-orange transition-colors inline-flex items-center gap-2"
                         >
                           <Pencil className="w-4 h-4" />
-                          Editar
+                          Edit
                         </button>
                         <button
                           type="button"
@@ -214,7 +271,7 @@ export function UsersTable() {
                           className="bg-red-600 text-white px-3 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors inline-flex items-center gap-2"
                         >
                           <Trash2 className="w-4 h-4" />
-                          Deletar
+                          Delete
                         </button>
                       </div>
                     </td>
@@ -226,7 +283,7 @@ export function UsersTable() {
         </table>
       </div>
 
-      <Modal open={!!editing && !!editForm} title="Editar usuário" onClose={closeEdit}>
+      <Modal open={!!editing && !!editForm} title="Edit user" onClose={closeEdit}>
         {editForm ? (
           <div className="space-y-4">
             {editError ? <div className="text-xs font-bold text-red-600">{editError}</div> : null}
@@ -250,7 +307,7 @@ export function UsersTable() {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Nome</label>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Name</label>
                 <input
                   value={editForm.displayName}
                   onChange={(e) => setEditForm((p) => (p ? { ...p, displayName: e.target.value } : p))}
@@ -289,7 +346,7 @@ export function UsersTable() {
                 onClick={closeEdit}
                 disabled={editSaving}
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 type="button"
@@ -297,22 +354,22 @@ export function UsersTable() {
                 onClick={() => void saveEdit()}
                 disabled={editSaving}
               >
-                {editSaving ? 'Salvando...' : 'Salvar'}
+                {editSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
         ) : null}
       </Modal>
 
-      <Modal open={!!deleting} title="Deletar usuário" onClose={closeDelete}>
+      <Modal open={!!deleting} title="Delete user" onClose={closeDelete}>
         {deleting ? (
           <div className="space-y-4">
             <div className="text-sm text-brand-darker/70">
-              Você está prestes a deletar <span className="font-bold text-brand-darker">{deleting.nick ?? deleting.email}</span>.
+              You are about to delete <span className="font-bold text-brand-darker">{deleting.nick ?? deleting.email}</span>.
             </div>
-            <div className="text-xs text-brand-darker/60">Digite a senha do DEVELOPER para confirmar.</div>
+            <div className="text-xs text-brand-darker/60">Enter the DEVELOPER password to confirm.</div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Senha</label>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Password</label>
               <input
                 value={deletePassword}
                 onChange={(e) => setDeletePassword(e.target.value)}
@@ -329,7 +386,7 @@ export function UsersTable() {
                 onClick={closeDelete}
                 disabled={deleteLoading}
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 type="button"
@@ -337,7 +394,7 @@ export function UsersTable() {
                 onClick={() => void confirmDelete()}
                 disabled={deleteLoading || deletePassword.length === 0}
               >
-                {deleteLoading ? 'Deletando...' : 'Deletar'}
+                {deleteLoading ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

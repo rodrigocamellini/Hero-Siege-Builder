@@ -48,6 +48,26 @@ export default async function Page() {
                 <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Role</div>
                 <div className="font-bold text-brand-darker">{user.role}</div>
               </div>
+
+              <div className="pt-4 border-t border-brand-dark/10 space-y-3">
+                <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Ações</div>
+                <div className="flex flex-wrap gap-3">
+                  <Link
+                    href="/account/tierlist"
+                    className="bg-brand-bg border border-brand-dark/10 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest text-brand-darker hover:border-brand-orange transition-colors"
+                  >
+                    Votar Tier List
+                  </Link>
+                  {user.role === 'DEVELOPER' ? (
+                    <Link
+                      href="/admin"
+                      className="bg-brand-bg border border-brand-dark/10 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest text-brand-darker hover:border-brand-orange transition-colors"
+                    >
+                      Painel
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
