@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bebas Neue", sans-serif;
+  --font-heading: "Space Grotesk", sans-serif;
+  
+  --color-brand-orange: #F27D26;
+  --color-brand-orange-dark: #D96B1F;
+  --color-brand-bg: #F5F2ED;
+  --color-brand-dark: #2D2D2D;
+  --color-brand-darker: #1A1A1A;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-bg text-brand-darker font-sans;
+  }
+}
+
+.pixel-border {
+  @apply border-2 border-brand-darker;
+  box-shadow: 
+    2px 2px 0 0 #000,
+    -2px -2px 0 0 #000 inset;
+}
+
+.pixel-card {
+  @apply bg-white border-2 border-brand-dark/10 rounded-xl overflow-hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.orange-button {
+  @apply bg-brand-orange hover:bg-brand-orange-dark text-white font-heading font-bold py-2 px-6 rounded-lg transition-all uppercase tracking-wider text-sm flex items-center justify-center gap-2;
+  box-shadow: 0 4px 0 0 #D96B1F;
+}
+
+.orange-button:active {
+  @apply translate-y-1;
+  box-shadow: 0 0px 0 0 #D96B1F;
+}
+
+.nav-link-active {
+  @apply text-brand-orange relative;
+}
+
+.nav-link-active::after {
+  content: '';
+  @apply absolute -bottom-1 left-0 w-full h-0.5 bg-brand-orange rounded-full;
+}
+
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.hero-gradient {
+  background: radial-gradient(circle at 70% 30%, #4a4a4a 0%, #1a1a1a 100%);
+}
