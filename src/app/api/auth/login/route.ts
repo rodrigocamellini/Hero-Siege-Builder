@@ -7,6 +7,7 @@ export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   try {
+    const dbTimeoutMs = 5000;
     const body = (await req.json().catch(() => null)) as { email?: unknown; password?: unknown; remember?: unknown } | null;
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
@@ -19,10 +20,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Password is required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true, email: true, nick: true, avatarUrl: true, passwordHash: true, displayName: true, role: true },
-    });
+    const user = await Promise.race([
+      prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, nick: true, avatarUrl: true, passwordHash: true, displayName: true, role: true },
+      }),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Timeout')), dbTimeoutMs)),
+    ]);
     if (!user) {
       return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
     }

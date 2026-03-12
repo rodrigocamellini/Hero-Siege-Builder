@@ -26,12 +26,27 @@ function buildDatabaseUrl() {
   return `mysql://${encodedUser}:${encodedPassword}@${host}:${port}/${database}`;
 }
 
+function addDefaultMySqlTimeoutParams(databaseUrl: string) {
+  try {
+    const u = new URL(databaseUrl);
+    if (u.protocol !== 'mysql:') return databaseUrl;
+
+    if (!u.searchParams.has('connect_timeout')) u.searchParams.set('connect_timeout', '5');
+    if (!u.searchParams.has('pool_timeout')) u.searchParams.set('pool_timeout', '5');
+    if (!u.searchParams.has('connection_limit')) u.searchParams.set('connection_limit', '5');
+    return u.toString();
+  } catch {
+    return databaseUrl;
+  }
+}
+
 if (process.env.NODE_ENV !== 'production') {
   const envLocalPath = path.join(process.cwd(), '.env.local');
   if (fs.existsSync(envLocalPath)) dotenv.config({ path: envLocalPath, override: true });
 }
 
-process.env.DATABASE_URL = process.env.DATABASE_URL ?? buildDatabaseUrl();
+const resolvedDatabaseUrl = process.env.DATABASE_URL ?? buildDatabaseUrl();
+process.env.DATABASE_URL = resolvedDatabaseUrl ? addDefaultMySqlTimeoutParams(resolvedDatabaseUrl) : resolvedDatabaseUrl;
 
 export const prisma =
   globalForPrisma.prisma ??
