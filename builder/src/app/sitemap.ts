@@ -1,7 +1,9 @@
 import type { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const baseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.NODE_ENV === 'production' ? 'https://www.herosiegebuilder.com' : 'http://localhost:3000');
   const lastModified = new Date();
 
   const routes = [
@@ -23,4 +25,3 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: path === '/' ? 1 : 0.7,
   }));
 }
-
