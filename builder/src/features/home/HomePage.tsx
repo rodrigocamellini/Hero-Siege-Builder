@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Filter } from 'lucide-react';
 import { BuildItem } from '../../components/BuildItem';
-import { ClassCard } from '../../components/ClassCard';
+import { NewsCard } from '../../components/NewsCard';
+import { SeasonTierList } from '../../components/SeasonTierList';
 import { Footer } from '../../components/Footer';
 import { Hero } from '../../components/Hero';
 import { Navbar } from '../../components/Navbar';
@@ -33,10 +34,14 @@ export function HomePage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-                <ClassCard name={t.classes.viking.name} description={t.classes.viking.desc} image="https://picsum.photos/seed/viking/100/100" btnText={t.viewBuilds} />
-                <ClassCard name={t.classes.pyro.name} description={t.classes.pyro.desc} image="https://picsum.photos/seed/pyro/100/100" btnText={t.viewBuilds} />
-                <ClassCard name={t.classes.marksman.name} description={t.classes.marksman.desc} image="https://picsum.photos/seed/marksman/100/100" btnText={t.viewBuilds} />
+                {t.homeNews.map((n) => (
+                  <NewsCard key={n.title} title={n.title} description={n.desc} image={n.image} btnText={t.createBuild} />
+                ))}
               </div>
+            </section>
+
+            <section>
+              <SeasonTierList t={t} />
             </section>
 
             <section>

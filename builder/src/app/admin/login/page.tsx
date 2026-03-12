@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '../../../server/auth';
 import { AdminLoginForm } from '../../../features/auth/AdminLoginForm';
@@ -22,13 +21,6 @@ export default async function Page() {
         </div>
 
         <AdminLoginForm redirectTo="/admin" storageKey="hsb_admin_login" />
-
-        <div className="text-center text-xs text-brand-darker/60">
-          Primeiro acesso?{' '}
-          <Link href="/setup" className="text-brand-orange font-bold hover:underline">
-            Criar admin
-          </Link>
-        </div>
       </div>
     </main>
   );

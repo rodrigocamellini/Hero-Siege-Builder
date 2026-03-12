@@ -28,8 +28,8 @@ export function Hero({ t }: { t: Translation }) {
           >
             <div className="absolute -inset-4 bg-brand-orange/20 blur-3xl rounded-full group-hover:bg-brand-orange/30 transition-colors"></div>
             <img
-              src="https://picsum.photos/seed/hero-siege-pixel/800/600"
-              alt="Hero Siege Characters"
+              src="https://i.postimg.cc/wv4z7SN7/o-HB2YGYGZMKNCdyz-Bojh6RIlqx1gan3Efg-Lizr-C5liy-TAJETkz-Y1d-Ridp-Fg-ZTMc-YDv-GBle-Owp-X1BTNNi9Qz-DT.jpg"
+              alt="New Class Spotlight - The Prophet"
               className="rounded-2xl md:rounded-3xl shadow-[0_0_50px_rgba(242,125,38,0.2)] border-4 border-white/5 relative z-10 w-full"
               referrerPolicy="no-referrer"
             />

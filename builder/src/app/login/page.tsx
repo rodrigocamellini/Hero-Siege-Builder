@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { LoginForm } from '../../features/auth/LoginForm';
 
 export default function Page() {
@@ -14,10 +13,6 @@ export default function Page() {
         </div>
 
         <LoginForm />
-
-        <div className="text-center text-xs text-brand-darker/60">
-          Primeiro acesso? <Link href="/setup" className="text-brand-orange font-bold hover:underline">Criar admin</Link>
-        </div>
       </div>
     </main>
   );

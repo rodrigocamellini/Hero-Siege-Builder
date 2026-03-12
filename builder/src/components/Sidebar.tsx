@@ -2,10 +2,12 @@
 
 import { ChevronDown, Star, User } from 'lucide-react';
 import type { Translation } from '../i18n/translations';
+import { SeasonCountdown } from './SeasonCountdown';
 
 export function Sidebar({ t }: { t: Translation }) {
   return (
     <aside className="space-y-8">
+      <SeasonCountdown t={t} />
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <h3 className="font-heading font-bold text-lg mb-8 uppercase tracking-tight flex items-center justify-between">
           {t.topBuilders}

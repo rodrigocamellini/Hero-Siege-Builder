@@ -2,18 +2,37 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Search, User, Menu, X } from 'lucide-react';
+import { Search, Menu, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Language, Translation } from '../i18n/translations';
+import { UserMenu } from '../features/auth/UserMenu';
 
 export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Language) => void; t: Translation }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMobileDatabaseOpen, setIsMobileDatabaseOpen] = useState(false);
+  const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
 
-  function getHrefByIndex(idx: number) {
-    if (idx === 0) return '/';
-    if (idx === t.nav.length - 1) return '/account';
-    return '#';
-  }
+  const navItems = [
+    { label: t.nav[0], href: '/' },
+    {
+      label: t.nav[1],
+      href: '#',
+      children: [
+        { label: t.nav[2], href: '#' },
+        { label: t.nav[3], href: '#' },
+      ],
+    },
+    {
+      label: t.nav[4],
+      href: '#',
+      children: [
+        { label: 'Ether', href: '#', badge: 'New' },
+        { label: 'Incarnation', href: '#', badge: 'New' },
+      ],
+    },
+    { label: t.nav[5], href: '#' },
+    { label: t.nav[6], href: '#' },
+  ];
 
   return (
     <nav className="bg-white border-b border-brand-dark/10 px-4 py-3 sticky top-0 z-50">
@@ -23,15 +42,47 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
         </Link>
 
         <div className="hidden lg:flex items-center gap-8">
-          {t.nav.map((item, idx) => (
-            <Link
-              key={item}
-              href={getHrefByIndex(idx)}
-              className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange ${idx === 0 ? 'nav-link-active' : 'text-brand-darker'}`}
-            >
-              {item}
-            </Link>
-          ))}
+          {navItems.map((item, idx) =>
+            item.children ? (
+              <div key={item.label} className="relative group">
+                <button
+                  type="button"
+                  className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange text-brand-darker inline-flex items-center gap-2`}
+                >
+                  {item.label}
+                  <ChevronDown className="w-4 h-4 opacity-70 group-hover:opacity-100 transition-opacity" />
+                </button>
+                <div className="absolute left-0 top-full pt-2 hidden group-hover:block">
+                  <div className="min-w-48 bg-white border border-brand-dark/10 rounded-2xl shadow-xl overflow-hidden">
+                    {item.children.map((child) => (
+                      <Link
+                        key={child.label}
+                        href={child.href}
+                        className="block px-4 py-3 font-heading font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
+                      >
+                        <span className="flex items-center justify-between gap-4">
+                          <span>{child.label}</span>
+                          {'badge' in child && child.badge ? (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold tracking-widest uppercase animate-pulse">
+                              {child.badge}
+                            </span>
+                          ) : null}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange ${idx === 0 ? 'nav-link-active' : 'text-brand-darker'}`}
+              >
+                {item.label}
+              </Link>
+            )
+          )}
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
@@ -63,15 +114,16 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
             <Search className="w-5 h-5 text-brand-darker" />
           </button>
 
-          <Link
-            href="/account"
-            className="bg-brand-orange p-2 rounded-lg cursor-pointer hover:bg-brand-orange-dark transition-all hover:scale-105 active:scale-95 shadow-sm hidden sm:block"
-          >
-            <User className="text-white w-5 h-5" />
-          </Link>
+          <UserMenu />
 
           <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            onClick={() => {
+              if (!isMenuOpen) {
+                setIsMobileDatabaseOpen(false);
+                setIsMobileTreeOpen(false);
+              }
+              setIsMenuOpen(!isMenuOpen);
+            }}
             className="lg:hidden p-2 hover:bg-brand-bg rounded-lg transition-colors text-brand-darker"
           >
             {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -88,14 +140,77 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
             className="lg:hidden bg-white border-t border-brand-dark/5 overflow-hidden"
           >
             <div className="flex flex-col p-4 space-y-4">
-              {t.nav.map((item, idx) => (
+              <Link
+                href="/"
+                className="font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {navItems[0].label}
+              </Link>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileDatabaseOpen((v) => !v)}
+                  className="w-full font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors flex items-center justify-between"
+                >
+                  <span>{navItems[1].label}</span>
+                  <ChevronDown className={`w-5 h-5 transition-transform ${isMobileDatabaseOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isMobileDatabaseOpen ? (
+                  <div className="pl-4 flex flex-col gap-2">
+                    {navItems[1].children?.map((child) => (
+                      <Link
+                        key={child.label}
+                        href={child.href}
+                        className="font-heading font-bold text-sm uppercase tracking-wider text-brand-darker/80 hover:text-brand-orange transition-colors"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        {child.label}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileTreeOpen((v) => !v)}
+                  className="w-full font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors flex items-center justify-between"
+                >
+                  <span>{navItems[2].label}</span>
+                  <ChevronDown className={`w-5 h-5 transition-transform ${isMobileTreeOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isMobileTreeOpen ? (
+                  <div className="pl-4 flex flex-col gap-2">
+                    {navItems[2].children?.map((child) => (
+                      <Link
+                        key={child.label}
+                        href={child.href}
+                        className="font-heading font-bold text-sm uppercase tracking-wider text-brand-darker/80 hover:text-brand-orange transition-colors flex items-center justify-between gap-4"
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        <span>{child.label}</span>
+                        {'badge' in child && child.badge ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold tracking-widest uppercase animate-pulse">
+                            {child.badge}
+                          </span>
+                        ) : null}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              {navItems.slice(3).map((item) => (
                 <Link
-                  key={item}
-                  href={getHrefByIndex(idx)}
+                  key={item.label}
+                  href={item.href}
                   className="font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  {item}
+                  {item.label}
                 </Link>
               ))}
 
@@ -123,15 +238,6 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                     </button>
                   </div>
                 </div>
-
-                <Link
-                  href="/account"
-                  className="orange-button w-full py-3 flex items-center justify-center gap-2"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <User className="w-5 h-5" />
-                  {t.nav[t.nav.length - 1]}
-                </Link>
               </div>
             </div>
           </motion.div>
