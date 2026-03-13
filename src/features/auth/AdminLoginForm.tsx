@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import { firebaseAuth } from '../../firebase';
 
 type Props = { redirectTo: string; storageKey: string };
 
 export function AdminLoginForm({ redirectTo, storageKey }: Props) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -25,7 +27,7 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
   }, []);
 
   useEffect(() => {
-    if (process.env.NODE_ENV === 'production') return;
+    if (import.meta.env.PROD) return;
     if (typeof window === 'undefined') return;
 
     const clearLegacy = async () => {
@@ -67,14 +69,19 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
         else window.localStorage.removeItem(storageKey);
       }
 
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password, remember }),
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? 'Incorrect email or password');
+      const emailNorm = email.trim().toLowerCase();
+      await setPersistence(firebaseAuth, remember ? browserLocalPersistence : browserSessionPersistence);
+      const cred = await signInWithEmailAndPassword(firebaseAuth, emailNorm, password);
+      const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
+      const userEmail = (cred.user.email ?? '').trim().toLowerCase();
+      if (!adminEmail) {
+        await signOut(firebaseAuth);
+        setError('Admin não configurado. Defina VITE_ADMIN_EMAIL no deploy e faça rebuild.');
+        return;
+      }
+      if (!userEmail || userEmail !== adminEmail) {
+        await signOut(firebaseAuth);
+        setError('Access denied');
         return;
       }
 
@@ -82,8 +89,7 @@ export function AdminLoginForm({ redirectTo, storageKey }: Props) {
         window.localStorage.setItem(storageKey, JSON.stringify({ email, remember }));
       }
 
-      router.replace(redirectTo);
-      router.refresh();
+      navigate(redirectTo, { replace: true });
     } catch {
       setError('Network error. Please try again.');
     } finally {

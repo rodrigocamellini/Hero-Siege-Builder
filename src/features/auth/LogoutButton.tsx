@@ -1,11 +1,13 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
 import { Modal } from '../../components/Modal';
+import { firebaseAuth } from '../../firebase';
 
 export function LogoutButton() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -14,9 +16,8 @@ export function LogoutButton() {
     setError(null);
     setLoading(true);
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      router.replace('/login');
-      router.refresh();
+      await signOut(firebaseAuth);
+      navigate('/login', { replace: true });
     } catch {
       setError('Falha de conexão. Tente novamente.');
     } finally {

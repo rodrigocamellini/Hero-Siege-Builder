@@ -1,13 +1,98 @@
 'use client';
 
-import { ChevronDown, Star, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { ChevronDown, Crown, Star, Trophy, User } from 'lucide-react';
 import type { Translation } from '../i18n/translations';
+import { classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
+import { firestore } from '../firebase';
 import { SeasonCountdown } from './SeasonCountdown';
 
+type PodiumEntry = { classKey: ClassKey; votes: number };
+
+function isTier(v: unknown): v is Tier {
+  return typeof v === 'string' && (tierOrder as readonly string[]).includes(v);
+}
+
+function isClassKey(v: unknown): v is ClassKey {
+  return typeof v === 'string' && v in classNames;
+}
+
 export function Sidebar({ t }: { t: Translation }) {
+  const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      const snap = await getDoc(doc(firestore, 'tierlist', 'aggregate'));
+      if (!snap.exists()) {
+        setPodiumS([]);
+        return;
+      }
+      const data = snap.data() as { podiumS?: unknown };
+      const raw = Array.isArray((data as any)?.podiumS) ? ((data as any).podiumS as unknown[]) : [];
+      const parsed = raw
+        .map((v) => (typeof v === 'object' && v ? (v as { classKey?: unknown; votes?: unknown }) : null))
+        .filter((v): v is { classKey: unknown; votes: unknown } => !!v)
+        .filter((v): v is PodiumEntry => isClassKey(v.classKey) && typeof v.votes === 'number' && Number.isFinite(v.votes) && v.votes > 0)
+        .slice(0, 3);
+      setPodiumS(parsed);
+    };
+    void load();
+  }, []);
+
   return (
     <aside className="space-y-8">
       <SeasonCountdown t={t} />
+
+      <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
+        <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight flex items-center justify-between">
+          S Tier Podium
+          <Crown className="w-4 h-4 text-brand-orange" />
+        </h3>
+        {podiumS === null ? (
+          <div className="animate-pulse h-24" />
+        ) : podiumS.length === 0 ? (
+          <div className="text-xs font-bold text-brand-dark/40 uppercase tracking-widest">No votes yet</div>
+        ) : (
+          <div className="space-y-3">
+            {podiumS.map((p, idx) => {
+              const podiumColor =
+                idx === 0
+                  ? { border: 'border-[#D4AF37]/60', text: 'text-[#D4AF37]', bg: 'bg-[#D4AF37]' }
+                  : idx === 1
+                    ? { border: 'border-[#C0C0C0]/70', text: 'text-[#A9A9A9]', bg: 'bg-[#C0C0C0]' }
+                    : { border: 'border-[#CD7F32]/70', text: 'text-[#CD7F32]', bg: 'bg-[#CD7F32]' };
+
+              return (
+                <div key={p.classKey} className={`relative bg-brand-bg border ${podiumColor.border} rounded-2xl p-3`}>
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 flex items-center gap-1">
+                      <div className="text-xs font-bold text-brand-dark/30 tabular-nums">{idx + 1}</div>
+                      <Trophy className={`w-4 h-4 ${podiumColor.text}`} />
+                    </div>
+
+                    <div
+                      className={`relative w-10 h-10 bg-white/70 rounded-2xl border ${podiumColor.border} overflow-hidden flex items-center justify-center flex-shrink-0`}
+                    >
+                      <img
+                        src={`/images/classes/${p.classKey}.webp`}
+                        alt={classNames[p.classKey]}
+                        className="w-full h-full object-contain pixelated"
+                      />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="font-bold text-brand-darker leading-tight break-words">{classNames[p.classKey]}</div>
+                      <div className="mt-1 text-[10px] font-bold text-brand-dark/30 uppercase tracking-widest tabular-nums">{p.votes} votes</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <h3 className="font-heading font-bold text-lg mb-8 uppercase tracking-tight flex items-center justify-between">
           {t.topBuilders}

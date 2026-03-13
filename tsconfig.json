@@ -1,8 +1,6 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "experimentalDecorators": true,
-    "useDefineForClassFields": false,
     "module": "ESNext",
     "lib": [
       "ES2022",
@@ -13,8 +11,8 @@
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
-    "allowJs": true,
-    "jsx": "preserve",
+    "allowJs": false,
+    "jsx": "react-jsx",
     "paths": {
       "@/*": [
         "./*"
@@ -22,10 +20,8 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
+    "types": [
+      "vite/client"
     ],
     "strict": false,
     "incremental": true,
@@ -33,12 +29,12 @@
     "resolveJsonModule": true
   },
   "include": [
-    "next-env.d.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
-    ".next/types/**/*.ts"
+    "src/vite-env.d.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "src/app/**"
   ]
 }

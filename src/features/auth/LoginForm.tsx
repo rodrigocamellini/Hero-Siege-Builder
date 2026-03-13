@@ -1,12 +1,25 @@
-'use client';
-
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { FirebaseError } from 'firebase/app';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { firebaseAuth } from '../../firebase';
+
+function authErrorMessage(err: unknown) {
+  const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
+  if (code === 'auth/invalid-credential') return 'Email ou senha incorretos.';
+  if (code === 'auth/user-not-found') return 'Conta não encontrada.';
+  if (code === 'auth/wrong-password') return 'Senha incorreta.';
+  if (code === 'auth/too-many-requests') return 'Muitas tentativas. Tente novamente mais tarde.';
+  if (code === 'auth/unauthorized-domain') return 'Domínio não autorizado no Firebase Auth.';
+  if (code === 'auth/network-request-failed') return 'Falha de conexão. Tente novamente.';
+  if (code === 'auth/invalid-api-key' || code === 'auth/api-key-not-valid') return 'API key do Firebase inválida ou bloqueada.';
+  return code ? `Erro: ${code}` : 'Erro ao entrar. Tente novamente.';
+}
 
 export function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -40,22 +53,13 @@ export function LoginForm() {
         else window.localStorage.removeItem('hsb_login_email');
       }
 
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? 'Failed to sign in');
-        return;
-      }
+      const emailNorm = email.trim().toLowerCase();
+      await signInWithEmailAndPassword(firebaseAuth, emailNorm, password);
       const raw = searchParams.get('callbackUrl');
       const redirectTo = raw && raw.startsWith('/') ? raw : '/';
-      router.replace(redirectTo);
-      router.refresh();
-    } catch {
-      setError('Network error. Please try again.');
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }

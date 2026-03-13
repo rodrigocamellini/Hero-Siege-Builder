@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { firebaseAuth } from '../../firebase';
 
 export function BootstrapForm() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nick, setNick] = useState('');
@@ -18,24 +20,12 @@ export function BootstrapForm() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/bootstrap', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-          nick,
-          avatarUrl: avatarUrl || undefined,
-          displayName: displayName || undefined,
-        }),
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? 'Falha ao criar admin');
-        return;
-      }
-      router.replace('/account');
-      router.refresh();
+      const emailNorm = email.trim().toLowerCase();
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, emailNorm, password);
+      const name = (displayName || nick).trim() || undefined;
+      const photoURL = avatarUrl.trim() || undefined;
+      await updateProfile(cred.user, { displayName: name, photoURL });
+      navigate('/', { replace: true });
     } finally {
       setLoading(false);
     }

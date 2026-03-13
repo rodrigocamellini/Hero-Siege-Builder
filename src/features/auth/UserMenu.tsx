@@ -1,29 +1,18 @@
-'use client';
-
-import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { LogOut, Shield, User } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ListOrdered, LogOut, Shield, User } from 'lucide-react';
 import { Modal } from '../../components/Modal';
-
-type Role = 'USER' | 'CONTRIBUTOR' | 'MODERATOR' | 'PARTNER' | 'DEVELOPER';
-type Me = {
-  id: string;
-  email: string;
-  nick: string | null;
-  avatarUrl: string | null;
-  displayName: string | null;
-  role: Role;
-};
+import { firebaseAuth, firestore } from '../../firebase';
+import { useAuth } from './AuthProvider';
 
 export function UserMenu() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [me, setMe] = useState<Me | null>(null);
+  const { user, profile, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -40,29 +29,10 @@ export function UserMenu() {
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true);
       try {
-        const res = await fetch('/api/auth/me', { method: 'GET' });
-        const data = (await res.json().catch(() => null)) as { ok?: boolean; user?: Me } | null;
-        if (!res.ok || !data?.ok || !data.user) {
-          setMe(null);
-          return;
-        }
-        setMe(data.user);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void load();
-  }, []);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch('/api/settings/registration', { method: 'GET' });
-        const data = (await res.json().catch(() => null)) as { ok?: boolean; enabled?: boolean } | null;
-        if (!res.ok || !data?.ok) return;
-        setRegistrationEnabled(data.enabled !== false);
+        const snap = await getDoc(doc(firestore, 'appSettings', 'public'));
+        const data = snap.exists() ? (snap.data() as { registrationEnabled?: unknown }) : null;
+        setRegistrationEnabled(data?.registrationEnabled !== false);
       } catch {}
     };
     void load();
@@ -71,21 +41,41 @@ export function UserMenu() {
   async function onLogout() {
     setLogoutLoading(true);
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      setMe(null);
+      await signOut(firebaseAuth);
       setOpen(false);
       setConfirmOpen(false);
-      router.refresh();
+      navigate('/login', { replace: true });
     } finally {
       setLogoutLoading(false);
     }
   }
 
-  const label = me?.nick ?? me?.displayName ?? me?.email ?? '';
-  const callbackUrl = (() => {
-    const qs = searchParams.toString();
-    return qs ? `${pathname}?${qs}` : pathname;
-  })();
+  const displayLabel = profile?.nick ?? profile?.displayName ?? user?.displayName ?? user?.email ?? '';
+  const avatarUrl = profile?.photoURL ?? user?.photoURL ?? null;
+  const callbackUrl = useMemo(() => `${location.pathname}${location.search}`, [location.pathname, location.search]);
+  const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
+  const isAdmin = !!adminEmail && !!user?.email && user.email.trim().toLowerCase() === adminEmail;
+  const effectiveRole = isAdmin ? 'DEVELOPER' : (profile?.role ?? 'USER');
+  const roleLabel =
+    effectiveRole === 'DEVELOPER'
+      ? 'Developer'
+      : effectiveRole === 'PARTNER'
+        ? 'Partner'
+        : effectiveRole === 'MODERATOR'
+          ? 'Moderator'
+          : effectiveRole === 'CONTRIBUTOR'
+            ? 'Contributor'
+            : 'User';
+  const roleStyle =
+    effectiveRole === 'DEVELOPER'
+      ? 'bg-brand-orange/10 text-brand-orange border-brand-orange/20'
+      : effectiveRole === 'PARTNER'
+        ? 'bg-purple-600/10 text-purple-700 border-purple-600/20'
+        : effectiveRole === 'MODERATOR'
+          ? 'bg-blue-600/10 text-blue-700 border-blue-600/20'
+          : effectiveRole === 'CONTRIBUTOR'
+            ? 'bg-green-600/10 text-green-700 border-green-600/20'
+            : 'bg-white/90 text-brand-darker/60 border-brand-dark/10';
 
   if (loading) {
     return (
@@ -98,16 +88,24 @@ export function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={me ? 'p-1 rounded-xl hover:bg-brand-bg transition-colors' : 'bg-brand-orange p-2 rounded-lg hover:bg-brand-orange-dark transition-all hover:scale-105 active:scale-95 shadow-sm'}
-        aria-label={me ? 'Account' : 'Sign in'}
+        className={user ? 'p-1 rounded-xl hover:bg-brand-bg transition-colors' : 'bg-brand-orange p-2 rounded-lg hover:bg-brand-orange-dark transition-all hover:scale-105 active:scale-95 shadow-sm'}
+        aria-label={user ? 'Account' : 'Sign in'}
       >
-        {me ? (
-          <div className="w-10 h-10 rounded-xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center">
-            {me.avatarUrl ? (
-              <img src={me.avatarUrl} alt={label} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+        {user ? (
+          <div className="relative w-10 h-10 rounded-xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={displayLabel} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
               <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">Account</div>
             )}
+            <div
+              className={[
+                'absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md border text-[8px] font-bold uppercase tracking-widest',
+                roleStyle,
+              ].join(' ')}
+            >
+              {roleLabel}
+            </div>
           </div>
         ) : (
           <User className="text-white w-5 h-5" />
@@ -116,25 +114,30 @@ export function UserMenu() {
 
       {open ? (
         <div className="absolute right-0 mt-2 w-72 bg-white border border-brand-dark/10 rounded-2xl shadow-xl overflow-hidden z-50">
-          {me ? (
+          {user ? (
             <div className="p-4 border-b border-brand-dark/10">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center">
-                  {me.avatarUrl ? (
-                    <img src={me.avatarUrl} alt={label} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt={displayLabel} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">-</div>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold text-brand-darker truncate">{label}</div>
-                  <div className="text-xs text-brand-darker/60 truncate">{me.email}</div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="text-sm font-bold text-brand-darker truncate">{displayLabel}</div>
+                    <div
+                      className={[
+                        'shrink-0 px-2 py-1 rounded-lg border text-[9px] font-bold uppercase tracking-widest',
+                        effectiveRole === 'USER' ? 'bg-brand-bg text-brand-darker/60 border-brand-dark/10' : roleStyle,
+                      ].join(' ')}
+                    >
+                      {roleLabel}
+                    </div>
+                  </div>
+                  <div className="text-xs text-brand-darker/60 truncate">{user.email}</div>
                 </div>
-              </div>
-              <div className="mt-3">
-                <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded-full border bg-brand-orange/10 text-brand-orange border-brand-orange/20">
-                  {me.role.toLowerCase()}
-                </span>
               </div>
             </div>
           ) : (
@@ -144,18 +147,19 @@ export function UserMenu() {
             </div>
           )}
           <div className="p-2">
-            {me ? (
+            {user ? (
               <>
                 <Link
-                  href="/account/tierlist"
+                  to="/tierlist"
                   onClick={() => setOpen(false)}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
                 >
+                  <ListOrdered className="w-4 h-4" />
                   Vote Tier List
                 </Link>
-                {me.role === 'DEVELOPER' ? (
+                {isAdmin ? (
                   <Link
-                    href="/admin"
+                    to="/admin"
                     onClick={() => setOpen(false)}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
                   >
@@ -175,7 +179,7 @@ export function UserMenu() {
             ) : (
               <>
                 <Link
-                  href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+                  to={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
                   onClick={() => setOpen(false)}
                   className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
                 >
@@ -186,7 +190,7 @@ export function UserMenu() {
                 </Link>
                 {registrationEnabled ? (
                   <Link
-                    href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+                    to={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}
                     onClick={() => setOpen(false)}
                     className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
                   >

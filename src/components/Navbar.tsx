@@ -1,7 +1,5 @@
-'use client';
-
-import { Suspense, useState } from 'react';
-import Link from 'next/link';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, Menu, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Language, Translation } from '../i18n/translations';
@@ -37,7 +35,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
   return (
     <nav className="bg-white border-b border-brand-dark/10 px-4 py-3 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <Link href="/" className="flex items-center group cursor-pointer">
+        <Link to="/" className="flex items-center group cursor-pointer">
           <img src="/images/logo.webp" alt="Hero Siege Builder" className="h-10 md:h-12 w-auto object-contain" />
         </Link>
 
@@ -57,7 +55,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                     {item.children.map((child) => (
                       <Link
                         key={child.label}
-                        href={child.href}
+                        to={child.href}
                         className="block px-4 py-3 font-heading font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
                       >
                         <span className="flex items-center justify-between gap-4">
@@ -76,7 +74,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
             ) : (
               <Link
                 key={item.label}
-                href={item.href}
+                to={item.href}
                 className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange ${idx === 0 ? 'nav-link-active' : 'text-brand-darker'}`}
               >
                 {item.label}
@@ -114,9 +112,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
             <Search className="w-5 h-5 text-brand-darker" />
           </button>
 
-          <Suspense fallback={<div className="w-10 h-10 rounded-lg bg-brand-bg border border-brand-dark/10 animate-pulse hidden sm:block" />}>
-            <UserMenu />
-          </Suspense>
+          <UserMenu />
 
           <button
             onClick={() => {
@@ -143,7 +139,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
           >
             <div className="flex flex-col p-4 space-y-4">
               <Link
-                href="/"
+                to="/"
                 className="font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors"
                 onClick={() => setIsMenuOpen(false)}
               >
@@ -164,7 +160,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                     {navItems[1].children?.map((child) => (
                       <Link
                         key={child.label}
-                        href={child.href}
+                        to={child.href}
                         className="font-heading font-bold text-sm uppercase tracking-wider text-brand-darker/80 hover:text-brand-orange transition-colors"
                         onClick={() => setIsMenuOpen(false)}
                       >
@@ -189,7 +185,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                     {navItems[2].children?.map((child) => (
                       <Link
                         key={child.label}
-                        href={child.href}
+                        to={child.href}
                         className="font-heading font-bold text-sm uppercase tracking-wider text-brand-darker/80 hover:text-brand-orange transition-colors flex items-center justify-between gap-4"
                         onClick={() => setIsMenuOpen(false)}
                       >
@@ -208,7 +204,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
               {navItems.slice(3).map((item) => (
                 <Link
                   key={item.label}
-                  href={item.href}
+                  to={item.href}
                   className="font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors"
                   onClick={() => setIsMenuOpen(false)}
                 >

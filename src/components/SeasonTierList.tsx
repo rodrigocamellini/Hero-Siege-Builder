@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
 import type { Translation } from '../i18n/translations';
 import { getClassDisplayName, tierOrder, type Tier } from '../data/tierlist';
+import { firestore } from '../firebase';
 
 const tierColors: Record<Tier, { border: string; bg: string; solid: string }> = {
   S: { border: 'border-red-500/30', bg: 'bg-red-500/10', solid: 'bg-red-500' },
@@ -27,11 +29,12 @@ export function SeasonTierList({ t }: { t: Translation }) {
 
   useEffect(() => {
     const load = async () => {
-      const res = await fetch('/api/tierlist/aggregate', { method: 'GET' });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; tiers?: Record<Tier, string[]>; voters?: number } | null;
-      if (!res.ok || !data?.ok || !data.tiers || typeof data.voters !== 'number') return;
+      const snap = await getDoc(doc(firestore, 'tierlist', 'aggregate'));
+      if (!snap.exists()) return;
+      const data = snap.data() as { tiers?: Record<Tier, string[]>; voters?: number };
+      if (!data?.tiers || typeof data.voters !== 'number') return;
       if (data.voters <= 0) return;
-      setTiers(tierOrder.map((tier) => ({ tier, classes: data.tiers![tier] ?? [] })));
+      setTiers(tierOrder.map((tier) => ({ tier, classes: data.tiers?.[tier] ?? [] })));
     };
     void load();
   }, []);

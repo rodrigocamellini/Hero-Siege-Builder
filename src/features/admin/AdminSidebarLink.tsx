@@ -1,8 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { Link, useLocation } from 'react-router-dom';
 
 type Props = {
   href: string;
@@ -12,12 +11,13 @@ type Props = {
 };
 
 export function AdminSidebarLink({ href, icon, label, exact }: Props) {
-  const pathname = usePathname();
+  const location = useLocation();
+  const pathname = location.pathname;
   const isActive = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <Link
-      href={href}
+      to={href}
       className={[
         'group flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-sm transition-colors',
         isActive ? 'bg-brand-orange/10 text-brand-orange' : 'text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange',
@@ -28,4 +28,3 @@ export function AdminSidebarLink({ href, icon, label, exact }: Props) {
     </Link>
   );
 }
-

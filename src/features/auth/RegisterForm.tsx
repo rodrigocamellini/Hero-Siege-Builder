@@ -1,14 +1,30 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { FirebaseError } from 'firebase/app';
+import { createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, updateProfile } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { firebaseAuth, firestore } from '../../firebase';
+
+function authErrorMessage(err: unknown) {
+  const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
+  if (code === 'auth/email-already-in-use') return 'Esse email já está em uso.';
+  if (code === 'auth/invalid-email') return 'Email inválido.';
+  if (code === 'auth/weak-password') return 'Senha fraca. Use pelo menos 8 caracteres.';
+  if (code === 'auth/operation-not-allowed') return 'Login por email/senha está desativado no Firebase.';
+  if (code === 'auth/unauthorized-domain') return 'Domínio não autorizado no Firebase Auth.';
+  if (code === 'auth/network-request-failed') return 'Falha de conexão. Tente novamente.';
+  if (code === 'auth/invalid-api-key' || code === 'auth/api-key-not-valid') return 'API key do Firebase inválida ou bloqueada.';
+  return code ? `Erro: ${code}` : 'Erro ao criar conta. Tente novamente.';
+}
 
 export function RegisterForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
-  const [nick, setNick] = useState('');
+  const [realName, setRealName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -26,10 +42,9 @@ export function RegisterForm() {
     const load = async () => {
       setRegistrationLoading(true);
       try {
-        const res = await fetch('/api/settings/registration', { method: 'GET' });
-        const data = (await res.json().catch(() => null)) as { ok?: boolean; enabled?: boolean } | null;
-        if (!res.ok || !data?.ok) return;
-        setRegistrationEnabled(data.enabled !== false);
+        const snap = await getDoc(doc(firestore, 'appSettings', 'public'));
+        const data = snap.exists() ? (snap.data() as { registrationEnabled?: unknown }) : null;
+        setRegistrationEnabled(data?.registrationEnabled !== false);
       } finally {
         setRegistrationLoading(false);
       }
@@ -46,20 +61,14 @@ export function RegisterForm() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password, nick, remember }),
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
-      if (!res.ok || !data?.ok) {
-        setError(data?.error ?? 'Failed to create account');
-        return;
-      }
-      router.replace(callbackUrl);
-      router.refresh();
-    } catch {
-      setError('Network error. Please try again.');
+      const emailNorm = email.trim().toLowerCase();
+      await setPersistence(firebaseAuth, remember ? browserLocalPersistence : browserSessionPersistence);
+      const cred = await createUserWithEmailAndPassword(firebaseAuth, emailNorm, password);
+      const displayName = realName.trim();
+      await updateProfile(cred.user, { displayName });
+      navigate(callbackUrl, { replace: true });
+    } catch (err) {
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -86,13 +95,14 @@ export function RegisterForm() {
       </div>
 
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Nickname (optional)</label>
+        <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Nome real</label>
         <input
-          value={nick}
-          onChange={(e) => setNick(e.target.value)}
+          value={realName}
+          onChange={(e) => setRealName(e.target.value)}
           type="text"
           className="w-full bg-brand-bg border border-brand-dark/10 rounded-lg py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-          autoComplete="nickname"
+          autoComplete="name"
+          required
           disabled={!registrationEnabled || registrationLoading}
         />
       </div>
