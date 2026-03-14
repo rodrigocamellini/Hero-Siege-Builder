@@ -6,6 +6,8 @@ import { FirebaseError } from 'firebase/app';
 import { classKeys, tierOrder, type ClassKey, type Tier } from '../../data/tierlist';
 import { firestore } from '../../firebase';
 
+type Role = 'USER' | 'CONTRIBUTOR' | 'MODERATOR' | 'PARTNER' | 'DEVELOPER';
+
 function firestoreErrorMessage(err: unknown) {
   const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
   if (code === 'permission-denied') return 'Permissão negada no Firestore. Ajuste as Rules para permitir admin.';
@@ -23,6 +25,12 @@ export function AdminSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildOk, setRebuildOk] = useState(false);
+  const [blogRoles, setBlogRoles] = useState<Role[]>(['DEVELOPER']);
+  const [blogSaving, setBlogSaving] = useState(false);
+  const [blogSavedOk, setBlogSavedOk] = useState(false);
+  const [blogDeleteRoles, setBlogDeleteRoles] = useState<Role[]>(['DEVELOPER']);
+  const [blogDeleteSaving, setBlogDeleteSaving] = useState(false);
+  const [blogDeleteSavedOk, setBlogDeleteSavedOk] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -32,6 +40,21 @@ export function AdminSettingsPanel() {
         const snap = await getDoc(doc(firestore, 'appSettings', 'public'));
         const data = snap.exists() ? (snap.data() as { registrationEnabled?: unknown }) : null;
         setRegistrationEnabled(data?.registrationEnabled !== false);
+
+        const blogSnap = await getDoc(doc(firestore, 'appSettings', 'blog'));
+        const raw = blogSnap.exists() ? (blogSnap.data() as any)?.allowedRoles : null;
+        const roles = Array.isArray(raw) ? (raw.filter((r) => typeof r === 'string') as Role[]) : [];
+        const normalized = Array.from(new Set(['DEVELOPER', ...roles])).filter((r): r is Role =>
+          r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+        );
+        setBlogRoles(normalized.length ? normalized : ['DEVELOPER']);
+
+        const rawDelete = blogSnap.exists() ? (blogSnap.data() as any)?.deleteAllowedRoles : null;
+        const deleteRoles = Array.isArray(rawDelete) ? (rawDelete.filter((r) => typeof r === 'string') as Role[]) : [];
+        const deleteNormalized = Array.from(new Set(['DEVELOPER', ...deleteRoles])).filter((r): r is Role =>
+          r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+        );
+        setBlogDeleteRoles(deleteNormalized.length ? deleteNormalized : ['DEVELOPER']);
       } catch (err) {
         setError(firestoreErrorMessage(err));
       } finally {
@@ -51,6 +74,42 @@ export function AdminSettingsPanel() {
       setError(firestoreErrorMessage(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveBlogRoles() {
+    setError(null);
+    setBlogSavedOk(false);
+    setBlogSaving(true);
+    try {
+      const normalized = Array.from(new Set(['DEVELOPER', ...blogRoles])).filter((r): r is Role =>
+        r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+      );
+      await setDoc(doc(firestore, 'appSettings', 'blog'), { allowedRoles: normalized, updatedAt: serverTimestamp() }, { merge: true });
+      setBlogRoles(normalized.length ? normalized : ['DEVELOPER']);
+      setBlogSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setBlogSaving(false);
+    }
+  }
+
+  async function saveBlogDeleteRoles() {
+    setError(null);
+    setBlogDeleteSavedOk(false);
+    setBlogDeleteSaving(true);
+    try {
+      const normalized = Array.from(new Set(['DEVELOPER', ...blogDeleteRoles])).filter((r): r is Role =>
+        r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+      );
+      await setDoc(doc(firestore, 'appSettings', 'blog'), { deleteAllowedRoles: normalized, updatedAt: serverTimestamp() }, { merge: true });
+      setBlogDeleteRoles(normalized.length ? normalized : ['DEVELOPER']);
+      setBlogDeleteSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setBlogDeleteSaving(false);
     }
   }
 
@@ -176,6 +235,104 @@ export function AdminSettingsPanel() {
           </button>
         </div>
         {rebuildOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Tier list atualizada.</div> : null}
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Blog</div>
+              <div className="text-sm font-bold text-brand-darker">Quem pode criar postagens</div>
+              <div className="text-xs text-brand-darker/60">Permite acesso à página /blog/editor.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveBlogRoles()}
+              disabled={loading || blogSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {blogSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(['DEVELOPER', 'MODERATOR', 'CONTRIBUTOR', 'PARTNER', 'USER'] as Role[]).map((r) => (
+              <label
+                key={r}
+                className="flex items-center gap-2 bg-white border border-brand-dark/10 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-widest text-brand-darker/70 select-none"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-orange"
+                  checked={blogRoles.includes(r)}
+                  disabled={loading || blogSaving || r === 'DEVELOPER'}
+                  onChange={(e) => {
+                    setBlogSavedOk(false);
+                    setBlogRoles((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(r);
+                      else next.delete(r);
+                      next.add('DEVELOPER');
+                      return Array.from(next);
+                    });
+                  }}
+                />
+                {r}
+              </label>
+            ))}
+          </div>
+
+          {blogSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões do blog atualizadas.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Blog</div>
+              <div className="text-sm font-bold text-brand-darker">Quem pode deletar posts e comentários</div>
+              <div className="text-xs text-brand-darker/60">Exibe lixeira no post e libera exclusão no painel.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveBlogDeleteRoles()}
+              disabled={loading || blogDeleteSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {blogDeleteSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(['DEVELOPER', 'MODERATOR', 'CONTRIBUTOR', 'PARTNER', 'USER'] as Role[]).map((r) => (
+              <label
+                key={r}
+                className="flex items-center gap-2 bg-white border border-brand-dark/10 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-widest text-brand-darker/70 select-none"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-orange"
+                  checked={blogDeleteRoles.includes(r)}
+                  disabled={loading || blogDeleteSaving || r === 'DEVELOPER'}
+                  onChange={(e) => {
+                    setBlogDeleteSavedOk(false);
+                    setBlogDeleteRoles((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(r);
+                      else next.delete(r);
+                      next.add('DEVELOPER');
+                      return Array.from(next);
+                    });
+                  }}
+                />
+                {r}
+              </label>
+            ))}
+          </div>
+
+          {blogDeleteSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões de exclusão atualizadas.</div> : null}
+        </div>
       </div>
 
       {error ? <div className="px-6 pb-4 text-xs font-bold text-red-600">{error}</div> : null}

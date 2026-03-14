@@ -2,7 +2,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ListOrdered, LogOut, Shield, User } from 'lucide-react';
+import { ListOrdered, LogOut, Settings, Shield, User } from 'lucide-react';
 import { Modal } from '../../components/Modal';
 import { firebaseAuth, firestore } from '../../firebase';
 import { useAuth } from './AuthProvider';
@@ -98,14 +98,6 @@ export function UserMenu() {
             ) : (
               <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">Account</div>
             )}
-            <div
-              className={[
-                'absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md border text-[8px] font-bold uppercase tracking-widest',
-                roleStyle,
-              ].join(' ')}
-            >
-              {roleLabel}
-            </div>
           </div>
         ) : (
           <User className="text-white w-5 h-5" />
@@ -149,6 +141,14 @@ export function UserMenu() {
           <div className="p-2">
             {user ? (
               <>
+                <Link
+                  to="/account/settings"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-orange/10 hover:text-brand-orange transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                  Account
+                </Link>
                 <Link
                   to="/tierlist"
                   onClick={() => setOpen(false)}

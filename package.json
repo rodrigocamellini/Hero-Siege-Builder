@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "npx vite",
+    "prebuild": "node scripts/generate-sitemap.mjs",
     "build": "npx vite build",
+    "prebuild:dist": "node scripts/generate-sitemap.mjs",
     "build:dist": "npx vite build",
     "preview": "npx vite preview --host 0.0.0.0 --port 4173",
     "lint": "tsc --noEmit",

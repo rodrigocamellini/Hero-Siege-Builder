@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Filter } from 'lucide-react';
+import { collection, getDocs, limit, orderBy, query, where, type Timestamp } from 'firebase/firestore';
 import { BuildItem } from '../../components/BuildItem';
 import { NewsCard } from '../../components/NewsCard';
 import { SeasonTierList } from '../../components/SeasonTierList';
@@ -10,11 +11,61 @@ import { Hero } from '../../components/Hero';
 import { Navbar } from '../../components/Navbar';
 import { Sidebar } from '../../components/Sidebar';
 import { translations, type Language } from '../../i18n/translations';
+import { firestore } from '../../firebase';
+
+type HomeBlogPost = {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  coverImage: string | null;
+  publishedAt: Timestamp | null;
+};
+
+function safeString(v: unknown) {
+  return typeof v === 'string' ? v : '';
+}
 
 export function HomePage() {
   const [lang, setLang] = useState<Language>('en');
   const t = translations[lang];
   const currentYear = new Date().getFullYear();
+  const [homePosts, setHomePosts] = useState<HomeBlogPost[]>([]);
+  const [homePostsLoading, setHomePostsLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setHomePostsLoading(true);
+      try {
+        const q = query(
+          collection(firestore, 'blogPosts'),
+          where('status', '==', 'PUBLISHED'),
+          orderBy('publishedAt', 'desc'),
+          limit(3),
+        );
+        const snap = await getDocs(q);
+        const next = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            title: safeString(data?.title) || d.id,
+            slug: safeString(data?.slug) || d.id,
+            excerpt: safeString(data?.excerpt) || null,
+            coverImage: safeString(data?.coverImage) || null,
+            publishedAt: (data?.publishedAt as Timestamp) ?? null,
+          } satisfies HomeBlogPost;
+        });
+        setHomePosts(next);
+      } catch {
+        setHomePosts([]);
+      } finally {
+        setHomePostsLoading(false);
+      }
+    };
+    void load();
+  }, []);
+
+  const readPostText = lang === 'pt' ? 'Ler post' : lang === 'ru' ? 'Читать' : 'Read post';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -34,9 +85,20 @@ export function HomePage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-                {t.homeNews.map((n) => (
-                  <NewsCard key={n.title} title={n.title} description={n.desc} image={n.image} btnText={t.createBuild} />
-                ))}
+                {!homePostsLoading && homePosts.length > 0
+                  ? homePosts.map((p) => (
+                      <NewsCard
+                        key={p.id}
+                        title={p.title}
+                        description={p.excerpt ?? ''}
+                        image={p.coverImage ?? 'https://picsum.photos/seed/hero-siege-blog/100/100'}
+                        btnText={readPostText}
+                        href={`/blog/${encodeURIComponent(p.slug)}`}
+                      />
+                    ))
+                  : t.homeNews.map((n) => (
+                      <NewsCard key={n.title} title={n.title} description={n.desc} image={n.image} btnText={t.createBuild} />
+                    ))}
               </div>
             </section>
 

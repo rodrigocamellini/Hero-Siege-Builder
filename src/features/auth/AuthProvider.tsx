@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, type Timestamp } from 'firebase/firestore';
 import { firebaseAuth, firestore } from '../../firebase';
 
+const DEFAULT_AVATAR_URL = '/images/avatar.webp';
+
 type Role = 'USER' | 'CONTRIBUTOR' | 'MODERATOR' | 'PARTNER' | 'DEVELOPER';
 type UserProfile = {
   uid: string;
@@ -47,7 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: user.email ?? null,
           displayName: user.displayName ?? null,
           nick: null,
-          photoURL: user.photoURL ?? null,
+          photoURL: user.photoURL ?? DEFAULT_AVATAR_URL,
           role: 'USER',
           createdAt: serverTimestamp(),
         });

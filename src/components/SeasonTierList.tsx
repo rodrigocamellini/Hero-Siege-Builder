@@ -53,7 +53,7 @@ export function SeasonTierList({ t }: { t: Translation }) {
         {tiers.map((row) => {
           const c = tierColors[row.tier];
           return (
-            <div key={row.tier} className={`relative rounded-2xl overflow-hidden border ${c.border}`}>
+            <div key={row.tier} className={`relative rounded-2xl overflow-visible border ${c.border}`}>
               <div className={`absolute inset-0 ${c.bg}`} />
               <div className="relative flex items-start gap-4 p-3">
                 <div className={`w-10 h-10 rounded-xl border ${c.border} ${c.solid} flex items-center justify-center flex-shrink-0`}>
@@ -61,24 +61,20 @@ export function SeasonTierList({ t }: { t: Translation }) {
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
                   {row.classes.map((cls) => (
-                    <div
-                      key={`${row.tier}-${cls}`}
-                      className="group relative w-10 h-10 md:w-11 md:h-11 bg-white/70 rounded-xl border border-brand-dark/10 overflow-hidden flex items-center justify-center backdrop-blur"
-                      title={getClassDisplayName(cls)}
-                      aria-label={getClassDisplayName(cls)}
-                      tabIndex={0}
-                    >
-                      <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity z-20">
+                    <div key={`${row.tier}-${cls}`} className="group relative w-10 h-10 md:w-11 md:h-11" tabIndex={0} aria-label={getClassDisplayName(cls)}>
+                      <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity z-50">
                         <div className="bg-brand-darker text-white text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md whitespace-nowrap shadow-lg">
                           {getClassDisplayName(cls)}
                         </div>
                       </div>
-                      <img
-                        src={`/images/classes/${cls}.webp`}
-                        alt={getClassDisplayName(cls)}
-                        className="w-full h-full object-contain pixelated"
-                        referrerPolicy="no-referrer"
-                      />
+                      <div className="w-full h-full bg-white/70 rounded-xl border border-brand-dark/10 overflow-hidden flex items-center justify-center backdrop-blur" title={getClassDisplayName(cls)}>
+                        <img
+                          src={`/images/classes/${cls}.webp`}
+                          alt={getClassDisplayName(cls)}
+                          className="w-full h-full object-contain pixelated"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>

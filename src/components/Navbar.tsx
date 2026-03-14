@@ -18,6 +18,16 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
       children: [
         { label: t.nav[2], href: '/database/classes' },
         { label: t.nav[3], href: '/database/items' },
+        { label: 'Runas', href: '/database/runes' },
+        { label: 'Relíquias', href: '/database/relics' },
+        { label: 'Chaos Tower', href: '/database/chaos-tower' },
+        { label: 'Mercenários', href: '/database/mercenarios' },
+        { label: 'Chaves', href: '/database/chaves' },
+        { label: 'Augments', href: '/database/augments' },
+        { label: 'Quests', href: '/database/quests' },
+        { label: 'Mineração', href: '/database/mineracao' },
+        { label: 'Gemas e Jóias', href: '/database/gems' },
+        { label: 'Charms', href: '/database/charms' },
       ],
     },
     {
@@ -29,6 +39,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
       ],
     },
     { label: t.nav[5], href: '/blog' },
+    { label: t.teamLabel, href: '/team' },
     { label: t.nav[6], href: '/contact' },
   ];
 

@@ -141,8 +141,8 @@ export function UsersTable() {
     setEditSaving(true);
     try {
       const nextNickRaw = editForm.nick.trim();
-      const nextNick = nextNickRaw.length ? nextNickRaw : null;
-      const nextNickKey = nextNick ? normalizeNick(nextNick) : null;
+      const nextNickKey = nextNickRaw.length ? normalizeNick(nextNickRaw) : null;
+      const nextNick = nextNickKey ? nextNickKey : null;
 
       await runTransaction(firestore, async (tx) => {
         const userRef = doc(firestore, 'users', editing.id);
@@ -161,7 +161,7 @@ export function UsersTable() {
           if (nickSnap.exists() && reservedUid && reservedUid !== editing.uid) {
             throw new Error('Esse nick já está em uso.');
           }
-          tx.set(nickRef, { uid: editing.uid, nick: nextNickRaw, updatedAt: serverTimestamp() }, { merge: true });
+          tx.set(nickRef, { uid: editing.uid, nick: nextNickKey, updatedAt: serverTimestamp() }, { merge: true });
         }
 
         if (!userSnap.exists()) {

@@ -8,6 +8,15 @@ import { createUserWithEmailAndPassword, setPersistence, browserLocalPersistence
 import { doc, getDoc } from 'firebase/firestore';
 import { firebaseAuth, firestore } from '../../firebase';
 
+const DEFAULT_AVATAR_URL = '/images/avatar.webp';
+
+function isValidEmail(v: string) {
+  const s = v.trim().toLowerCase();
+  if (!s) return false;
+  if (s.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
 function authErrorMessage(err: unknown) {
   const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
   if (code === 'auth/email-already-in-use') return 'Esse email já está em uso.';
@@ -59,13 +68,27 @@ export function RegisterForm() {
       setError('Registration is currently disabled.');
       return;
     }
+
+    const emailNorm = email.trim().toLowerCase();
+    const displayName = realName.trim();
+    if (!isValidEmail(emailNorm)) {
+      setError('Email inválido.');
+      return;
+    }
+    if (!displayName) {
+      setError('Nome é obrigatório.');
+      return;
+    }
+    if (!password) {
+      setError('Senha é obrigatória.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const emailNorm = email.trim().toLowerCase();
       await setPersistence(firebaseAuth, remember ? browserLocalPersistence : browserSessionPersistence);
       const cred = await createUserWithEmailAndPassword(firebaseAuth, emailNorm, password);
-      const displayName = realName.trim();
-      await updateProfile(cred.user, { displayName });
+      await updateProfile(cred.user, { displayName, photoURL: DEFAULT_AVATAR_URL });
       navigate(callbackUrl, { replace: true });
     } catch (err) {
       setError(authErrorMessage(err));

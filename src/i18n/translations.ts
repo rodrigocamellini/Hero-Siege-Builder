@@ -3,6 +3,7 @@ export type Language = 'en' | 'pt' | 'ru';
 export const translations = {
   en: {
     nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Contact'],
+    teamLabel: 'Team',
     heroTitle: 'New Class Spotlight<br/><span class="text-brand-orange">The&nbsp;Prophet</span>',
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
@@ -53,6 +54,7 @@ export const translations = {
   },
   pt: {
     nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Contact'],
+    teamLabel: 'Equipe',
     heroTitle: 'New Class Spotlight<br/><span class="text-brand-orange">The&nbsp;Prophet</span>',
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
@@ -103,6 +105,7 @@ export const translations = {
   },
   ru: {
     nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Contact'],
+    teamLabel: 'Команда',
     heroTitle: 'ПЛАНИРУЙТЕ СВОЕ <span class="text-brand-orange">ВЕЛИКОЕ</span> ПУТЕШЕСТВИЕ В HERO SIEGE.',
     heroSubtitle: 'СОЗДАВАЙТЕ, ДЕЛИТЕСЬ И ДОМИНИРУЙТЕ С САМЫМ ПОЛНЫМ СТРОИТЕЛЕМ СООБЩЕСТВА.',
     createBuild: 'Создать билд',

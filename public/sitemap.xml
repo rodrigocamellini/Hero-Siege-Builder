@@ -1,33 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://example.com/</loc>
+    <loc>https://www.herosiegebuilder.com/</loc>
   </url>
   <url>
-    <loc>https://example.com/tierlist</loc>
+    <loc>https://www.herosiegebuilder.com/blog</loc>
   </url>
   <url>
-    <loc>https://example.com/database</loc>
+    <loc>https://www.herosiegebuilder.com/contact</loc>
   </url>
   <url>
-    <loc>https://example.com/database/classes</loc>
+    <loc>https://www.herosiegebuilder.com/database</loc>
   </url>
   <url>
-    <loc>https://example.com/database/items</loc>
+    <loc>https://www.herosiegebuilder.com/database/classes</loc>
   </url>
   <url>
-    <loc>https://example.com/tree</loc>
+    <loc>https://www.herosiegebuilder.com/database/items</loc>
   </url>
   <url>
-    <loc>https://example.com/tree/ether</loc>
+    <loc>https://www.herosiegebuilder.com/tierlist</loc>
   </url>
   <url>
-    <loc>https://example.com/tree/incarnation</loc>
+    <loc>https://www.herosiegebuilder.com/tree</loc>
   </url>
   <url>
-    <loc>https://example.com/blog</loc>
+    <loc>https://www.herosiegebuilder.com/tree/ether</loc>
   </url>
   <url>
-    <loc>https://example.com/contact</loc>
+    <loc>https://www.herosiegebuilder.com/tree/incarnation</loc>
   </url>
 </urlset>
