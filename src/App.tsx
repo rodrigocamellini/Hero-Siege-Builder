@@ -1,7 +1,7 @@
 import { HomePage } from './features/home/HomePage';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { getApps, initializeApp } from 'firebase/app';
-import { doc, getDoc, getFirestore } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, getFirestore } from 'firebase/firestore';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -1798,7 +1798,7 @@ function MiningDatabasePage() {
   );
 }
 
-function handleGemError(e: React.SyntheticEvent<HTMLImageElement>) {
+function handleGemError(e: SyntheticEvent<HTMLImageElement>) {
   const t = e.currentTarget;
   if (t.src.includes('wikia.nocookie.net')) {
     const filename = t.src.split('/').pop();
@@ -2802,7 +2802,7 @@ function getRelicImageSrc(name: string) {
   return '';
 }
 
-function handleRelicError(e: React.SyntheticEvent<HTMLImageElement>) {
+function handleRelicError(e: SyntheticEvent<HTMLImageElement>) {
   e.currentTarget.style.display = 'none';
 }
 
@@ -2811,7 +2811,7 @@ function RelicsDatabasePage() {
   const [query, setQuery] = useState('');
 
   const pageTitle = 'Relics - Database | Hero Siege Builder';
-  const pageDescription = 'Passive relic scaling and other relics.';
+  const pageDescription = 'Passive relic scaling.';
   const pageStructuredData = useMemo(
     () => [
       breadcrumbListLd([
@@ -2861,22 +2861,35 @@ function RelicsDatabasePage() {
     return onDeathRelics.filter((r) => r.name.toLowerCase().includes(q));
   }, [query]);
 
-  const filteredOnAttackOrHit = useMemo(() => {
+  const onAttackRelics = useMemo(() => onAttackOrHitRelics, []);
+  const onHitRelics = useMemo(
+    () =>
+      onAttackOrHitRelics.filter(
+        (r) =>
+          r.name !== "Assassin's Shuriken" &&
+          r.name !== 'Devil Skull' &&
+          r.name !== 'Razor Leaf' &&
+          r.name !== 'Witch Claw'
+      ),
+    []
+  );
+
+  const filteredOnAttack = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return onAttackOrHitRelics;
-    return onAttackOrHitRelics.filter((r) => r.name.toLowerCase().includes(q));
-  }, [query]);
+    if (!q) return onAttackRelics;
+    return onAttackRelics.filter((r) => r.name.toLowerCase().includes(q));
+  }, [onAttackRelics, query]);
+
+  const filteredOnHit = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return onHitRelics;
+    return onHitRelics.filter((r) => r.name.toLowerCase().includes(q));
+  }, [onHitRelics, query]);
 
   const filteredOnCast = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return onCastRelics;
     return onCastRelics.filter((r) => r.name.toLowerCase().includes(q));
-  }, [query]);
-
-  const filteredOthers = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return otherRelics;
-    return otherRelics.filter((r) => r.name.toLowerCase().includes(q));
   }, [query]);
 
   const renderLevelCells = (rel: PassiveRelicRow, key: 'l1' | 'l5' | 'l10') => {
@@ -2976,7 +2989,7 @@ function RelicsDatabasePage() {
         <div className="lg:col-span-3 space-y-6">
           <div className="border-b border-brand-dark/10 pb-4">
             <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Relics</h1>
-            <p className="mt-2 text-sm text-brand-darker/60">Passive relic scaling and other relics. Uses local images.</p>
+            <p className="mt-2 text-sm text-brand-darker/60">Passive relic scaling. Uses local images.</p>
           </div>
 
           <div className="bg-white border border-brand-dark/10 rounded-2xl p-4 md:p-6">
@@ -3034,14 +3047,455 @@ function RelicsDatabasePage() {
 
           {renderExtraTable('Orbital Relics', filteredOrbitals)}
           {renderExtraTable('Follower Relics', filteredFollowers)}
-          {renderExtraTable('On Death Relics', filteredOnDeath)}
-          {renderExtraTable('On Attack / On Hit Relics', filteredOnAttackOrHit)}
-          {renderExtraTable('On Cast Relics', filteredOnCast)}
-          {renderExtraTable('Other Relics', filteredOthers)}
+          {renderExtraTable('Relics After Each Kill', filteredOnDeath)}
+          {renderExtraTable('Relics with Chance on Attack', filteredOnAttack)}
+          {renderExtraTable('Relics with Chance when Hit', filteredOnHit)}
+          {renderExtraTable('Relics with Chance on Cast', filteredOnCast)}
         </div>
 
         <Sidebar t={t} />
       </div>
+    </StandardPage>
+  );
+}
+
+type ItemCategoryRow = {
+  id: string;
+  title?: string;
+  image?: string;
+  group?: string;
+  order?: number;
+};
+
+type ItemRow = {
+  id: string;
+  name?: string;
+  rarity?: string;
+  image?: string;
+  img?: string;
+  description?: string;
+  data?: Record<string, string | number>;
+};
+
+const EXTRA_SHIELDS: ItemRow[] = [
+  { id: 'archmagus-glyphward', name: 'Archmagus Glyphward', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Archmagus_Glyphward.png', data: { Tier: 'C', Level: 20, Resumo: 'Energy & Intelligence' } },
+  { id: 'battle-mages-shield', name: "Battle Mage's Shield", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Battle_Mages_Shield.png', data: { Tier: 'A', Level: 58, Resumo: '+1 All Skills & FCR' } },
+  { id: 'battlemagis-rampart', name: "Battlemagi's Rampart", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Battlemagis_Rampart.png', data: { Tier: 'D', Level: 16, Resumo: 'Defense & Replenish' } },
+  { id: 'blessed-defender', name: 'Blessed Defender', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Blessed_Defender.png', data: { Tier: 'C', Level: 28, Resumo: 'Lightning DMG & Blocking' } },
+  { id: 'bobs-piece-of-plywood', name: "Bob's Piece of Plywood", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Bobs_Piece_of_Plywood.png', data: { Tier: 'C', Level: 25, Resumo: 'Chainsaw Massacre Proc' } },
+  { id: 'crystal-infused-shield', name: 'Crystal Infused Shield', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Crystal_Infused_Shield.png', data: { Tier: 'B', Level: 52, Resumo: '+1 All Skills & Resists' } },
+  { id: 'darkwood-defender', name: 'Darkwood Defender', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Darkwood_Defender.png', data: { Tier: 'C', Level: 23, Resumo: 'Str/Energy/Vit' } },
+  { id: 'den-glider-in', name: 'Den Glider In', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Den_Glider_In.png', data: { Tier: 'A', Level: 57, Resumo: 'Magic Find & Vitality' } },
+  { id: 'gem-encrusted-tower', name: 'Gem Encrusted Tower', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Gem_Encrusted_Tower.png', data: { Tier: 'S', Level: 93, Resumo: 'Defense & Sockets' } },
+  { id: 'heavens-champion', name: "Heaven's Champion", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Heavens_Champion.png', data: { Tier: 'S', Level: 82, Resumo: '+2-4 All Skills' } },
+  { id: 'iron-giants-shield', name: "Iron Giant's Shield", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Iron_Giants_Shield.png', data: { Tier: 'S', Level: 90, Resumo: 'Massive Defense' } },
+  { id: 'kings-tower-shield', name: "King's Tower Shield", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Kings_Tower_Shield.png', data: { Tier: 'S', Level: 83, Resumo: 'All Attributes & Reduction' } },
+  { id: 'lancers-wall', name: "Lancer's Wall", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Lancers_Wall.png', data: { Tier: 'A', Level: 55, Resumo: 'Phys/Magic Reduction' } },
+  { id: 'leprechauns-greed', name: "Leprechaun's Greed", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Leprechauns_Greed.png', data: { Tier: 'S', Level: 87, Resumo: 'Gold Find & Greed' } },
+  { id: 'lost-wizards-barrier', name: "Lost Wizard's Barrier", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Lost_Wizards_Barrier.png', data: { Tier: 'C', Level: 30, Resumo: 'Arcane DMG & CDR' } },
+  { id: 'mirror-of-flesh', name: 'Mirror of Flesh', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Mirror_of_Flesh.png', data: { Tier: 'S', Level: 88, Resumo: 'Life Steal & Vitality' } },
+  { id: 'novices-tower', name: "Novice's Tower", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Novices_Tower.png', data: { Tier: 'S', Level: 92, Resumo: 'Beginner High Tier' } },
+  { id: 'pandemic-shield', name: 'Pandemic Shield', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Pandemic_Shield.png', data: { Tier: 'B', Level: 50, Resumo: 'Poison Nova Proc' } },
+  { id: 'pitfiends-thorn', name: "Pitfiend's Thorn", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Pitfiends_Thorn.png', data: { Tier: 'S', Level: 87, Resumo: 'Thorns & Defense' } },
+  { id: 'rendguard-of-carnage', name: 'Rendguard of Carnage', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Rendguard_of_Carnage.png', data: { Tier: 'B', Level: 40, Resumo: 'Crit & Deadly Blow' } },
+  { id: 'rift-eye', name: 'Rift Eye', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Rift_Eye.png', data: { Tier: 'A', Level: 64, Resumo: 'Arcane Skills & FCR' } },
+  { id: 'rusted-spiked-shield', name: 'Rusted Spiked Shield', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Rusted_Spiked_Shield.png', data: { Tier: 'C', Level: 26, Resumo: 'Fan of Knives Proc' } },
+  { id: 'shadow-buckler', name: 'Shadow Buckler', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Shadow_Buckler.png', data: { Tier: 'S', Level: 88, Resumo: 'Evasion & Darkness' } },
+  { id: 'shield-of-shattered-elements', name: 'Shield of Shattered Elements', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Shield_of_Shattered_Elements.png', data: { Tier: 'D', Level: 14, Resumo: 'Enemy Resists Lower' } },
+  { id: 'spellbinders-magebarrier', name: "Spellbinder's Magebarrier", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Spellbinders_Magebarrier.png', data: { Tier: 'B', Level: 35, Resumo: 'Magic DMG & Mana' } },
+  { id: 'storm-gladiators-wall', name: "Storm Gladiator's Wall", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Storm_Gladiators_Wall.png', data: { Tier: 'B', Level: 54, Resumo: 'Lightning Fury Proc' } },
+  { id: 'the-templar', name: 'The Templar', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_The_Templar.png', data: { Tier: 'A', Level: 61, Resumo: '+2 Skills & Movement' } },
+  { id: 'thunder-lords-aegis', name: "Thunder Lord's Aegis", rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Thunder_Lords_Aegis.png', data: { Tier: 'S', Level: 88, Resumo: 'High Lightning DMG' } },
+  { id: 'thunderburn-aegis', name: 'Thunderburn Aegis', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Thunderburn_Aegis.png', data: { Tier: 'D', Level: 12, Resumo: 'Fire/Light DMG' } },
+  { id: 'thunderstruck-deflector', name: 'Thunderstruck Deflector', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Thunderstruck_Deflector.png', data: { Tier: 'B', Level: 45, Resumo: 'Movement & IAS' } },
+  { id: 'visage-of-relentless-rage', name: 'Visage of Relentless Rage', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Visage_of_Relentless_Rage.png', data: { Tier: 'S', Level: 86, Resumo: 'Physical DMG & Strength' } },
+  { id: 'wall-of-the-legion', name: 'Wall of the Legion', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Wall_of_the_Legion.png', data: { Tier: 'S', Level: 93, Resumo: 'Minion/Ally Buffs' } },
+  { id: 'ward-of-blood', name: 'Ward of Blood', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Ward_of_Blood.png', data: { Tier: 'S', Level: 86, Resumo: 'Life Steal & Devout Doctor' } },
+  { id: 'ward-of-toxicity', name: 'Ward of Toxicity', rarity: 'Satanic', image: 'https://herosiege.wiki.gg/images/Shields_Ward_of_Toxicity.png', data: { Tier: 'B', Level: 48, Resumo: 'Poison Skill DMG' } },
+  { id: 'aztec-ward', name: 'Aztec Ward', rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Aztec_Ward.png', data: { Tier: 'A', Level: 52, Resumo: '+2 Poison Skills, FCR, Poison DMG' } },
+  { id: 'flame-diviners-ward', name: "Flame Diviner's Ward", rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Flame_Diviners_Ward.png', data: { Tier: 'A', Level: 60, Resumo: 'Fire Skill DMG, FCR, Fire Resist' } },
+  { id: 'gladiators-wall-set', name: "Gladiator's Wall", rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Gladiators_Wall.png', data: { Tier: 'A', Level: 48, Resumo: 'Crit Chance/DMG, Mana Steal, Str/Dex' } },
+  { id: 'justiciars-thunder-wall', name: "Justiciar's Thunder Wall", rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Justiciars_Thunder_Wall.png', data: { Tier: 'A', Level: 59, Resumo: 'Lightning Skill DMG, DMG Reduction' } },
+  { id: 'sacred-aegis', name: 'Sacred Aegis', rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Sacred_Aegis.png', data: { Tier: 'A', Level: 53, Resumo: 'Attack Rating, Mana Steal, Life based on Level' } },
+  { id: 'shield-bearers-wall', name: "Shield Bearer's Wall", rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Shield_Bearers_Wall.png', data: { Tier: 'A', Level: 65, Resumo: 'Attack DMG, Life Steal, Str, All Resist' } },
+  { id: 'vagabonds-ward', name: "Vagabond's Ward", rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Vagabonds_Ward.png', data: { Tier: 'A', Level: 51, Resumo: '+2 Physical Skills, IAS, All Attributes, Resist' } },
+  { id: 'valkyries-battle-shield', name: "Valkyrie's Battle Shield", rarity: 'Satanic Set', image: 'https://herosiege.wiki.gg/images/Shields_Valkyries_Battle_Shield.png', data: { Tier: 'A', Level: 56, Resumo: 'Blocking Chance, FCR, Lightning Skill DMG' } },
+  { id: 'ancient-aegis', name: 'Ancient Aegis', rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Ancient_Aegis.png', data: { Tier: 'SS', Level: 95, Resumo: 'Ancient Power' } },
+  { id: 'celestials-authority', name: "Celestial's Authority", rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Celestials_Authority.png', data: { Tier: 'SS', Level: 95, Resumo: 'Holy Protection' } },
+  { id: 'defenders-justice', name: "Defender's Justice", rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Defenders_Justice.png', data: { Tier: 'SS', Level: 98, Resumo: 'True Tank' } },
+  { id: 'demons-mirror', name: "Demon's Mirror", rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Demons_Mirror.png', data: { Tier: 'SS', Level: 92, Resumo: 'Reflection' } },
+  { id: 'pit-ravagers-cetratus', name: "Pit Ravager's Cetratus", rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Pit_Ravagers_Cetratus.png', data: { Tier: 'SS', Level: 92, Resumo: 'Arena Legend' } },
+  { id: 'shield-of-the-abyss', name: 'Shield of the Abyss', rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Shield_of_the_Abyss.png', data: { Tier: 'SS', Level: 96, Resumo: 'Void Barrier' } },
+  { id: 'suomi-finland-perkele', name: 'SUOMI FINLAND PERKELE', rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_SUOMI_FINLAND_PERKELE.png', data: { Tier: 'SS', Level: 92, Resumo: 'Nordic Rage' } },
+  { id: 'tombstone-shield', name: 'Tombstone', rarity: 'Heroic', image: 'https://herosiege.wiki.gg/images/Shields_Tombstone.png', data: { Tier: 'SS', Level: 100, Resumo: 'Undeath' } },
+  { id: 'gabriels-unholy-oath', name: "Gabriel's Unholy Oath", rarity: 'Unholy', image: 'https://herosiege.wiki.gg/images/Shields_Gabriels_Unholy_Oath.png', data: { Tier: 'SS', Level: 100, Resumo: 'Summoning & Curse' } },
+  { id: 'st-hallgars-aegis', name: "St. Hallgar's Aegis", rarity: 'Angelic', image: 'https://herosiege.wiki.gg/images/Shields_St._Hallgars_Bloodforged_Aegis.png', data: { Tier: 'SS', Level: 100, Resumo: 'Blood & Light' } },
+  { id: 'st-tomis-vibrant-aura', name: "St. Tomi's Vibrant Aura", rarity: 'Angelic', image: 'https://herosiege.wiki.gg/images/Shields_St._Tomis_Vibrant_Aura.png', data: { Tier: 'SS', Level: 100, Resumo: 'Holy Auras' } },
+];
+
+function rarityStyle(r: string | undefined) {
+  const t = (r || '').toLowerCase();
+  if (t.includes('satanic set')) {
+    return { text: 'text-green-400', glow: '0 0 18px rgba(74,222,128,0.55)', hex: '#4ade80' };
+  }
+  if (t.includes('satanic')) {
+    return { text: 'text-red-500', glow: '0 0 18px rgba(239,68,68,0.55)', hex: '#ef4444' };
+  }
+  if (t.includes('angelic')) {
+    return { text: 'text-yellow-300', glow: '0 0 18px rgba(253,224,71,0.55)', hex: '#fde047' };
+  }
+  if (t.includes('heroic')) {
+    return { text: 'text-emerald-400', glow: '0 0 18px rgba(52,211,153,0.55)', hex: '#34d399' };
+  }
+  if (t.includes('unholy')) {
+    return { text: 'text-pink-400', glow: '0 0 18px rgba(244,114,182,0.55)', hex: '#f472b6' };
+  }
+  if (t.includes('legend')) {
+    return { text: 'text-amber-400', glow: '0 0 18px rgba(251,191,36,0.55)', hex: '#fbbf24' };
+  }
+  if (t.includes('epic')) {
+    return { text: 'text-purple-400', glow: '0 0 18px rgba(192,132,252,0.55)', hex: '#c084fc' };
+  }
+  if (t.includes('rare')) {
+    return { text: 'text-blue-400', glow: '0 0 18px rgba(96,165,250,0.55)', hex: '#60a5fa' };
+  }
+  if (t.includes('magic')) {
+    return { text: 'text-indigo-400', glow: '0 0 18px rgba(129,140,248,0.55)', hex: '#818cf8' };
+  }
+  if (t.includes('common') || t.includes('normal')) {
+    return { text: 'text-gray-300', glow: '0 0 10px rgba(209,213,219,0.35)', hex: '#d1d5db' };
+  }
+  return { text: 'text-white', glow: '0 0 0 rgba(0,0,0,0)', hex: '#ffffff' };
+}
+
+function ItemsDatabasePage() {
+  const t = translations.en;
+  const [itemCategories, setItemCategories] = useState<ItemCategoryRow[]>([]);
+  const [selectedItemCategory, setSelectedItemCategory] = useState<ItemCategoryRow | null>(null);
+  const [itemsList, setItemsList] = useState<ItemRow[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ItemRow | null>(null);
+
+  const closeModal = () => setSelectedItem(null);
+
+  const getItemImage = (item: ItemRow) => safeString(item.image) || safeString(item.img);
+
+  const loadItemCategories = useCallback(async () => {
+    setItemsLoading(true);
+    try {
+      const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories'));
+      const cats: ItemCategoryRow[] = [];
+      for (const s of snap.docs) {
+        const data = s.data() as Record<string, unknown>;
+        cats.push({
+          id: s.id,
+          title: safeString(data.title),
+          image: safeString(data.image),
+          group: safeString(data.group),
+          order: typeof data.order === 'number' ? data.order : undefined,
+        });
+      }
+      cats.sort((a, b) => {
+        const ao = a.order ?? 999;
+        const bo = b.order ?? 999;
+        if (ao !== bo) return ao - bo;
+        return (a.title || '').localeCompare(b.title || '');
+      });
+      setItemCategories(cats);
+    } catch {
+      setItemCategories([]);
+    } finally {
+      setItemsLoading(false);
+    }
+  }, []);
+
+  const loadItemsForCategory = useCallback(async (cat: ItemCategoryRow) => {
+    setItemsLoading(true);
+    setSelectedItemCategory(cat);
+    setSelectedItem(null);
+    try {
+      const candidates = (() => {
+        const id = String(cat.id || '').trim();
+        const arr = [id];
+        if (id.toLowerCase().endsWith('s')) arr.push(id.slice(0, -1));
+        else arr.push(id + 's');
+        return Array.from(new Set(arr.map((s) => s.toLowerCase())));
+      })();
+
+      let pickedItems: ItemRow[] = [];
+      for (const cid of candidates) {
+        const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories', cid, 'items'));
+        const items: ItemRow[] = [];
+        for (const s of snap.docs) {
+          const data = s.data() as Record<string, unknown>;
+          items.push({
+            id: s.id,
+            name: safeString(data.name),
+            rarity: safeString(data.rarity),
+            image: safeString(data.image),
+            img: safeString(data.img),
+            description: safeString(data.description),
+            data: (typeof data.data === 'object' && data.data && !Array.isArray(data.data) ? (data.data as Record<string, string | number>) : undefined),
+          });
+        }
+        if (items.length > 0) {
+          pickedItems = items;
+          break;
+        }
+      }
+
+      const catIdLc = String(cat.id || '').trim().toLowerCase();
+      const catTitleLc = String(cat.title || '').trim().toLowerCase();
+      const cleaned = pickedItems.filter((it) => {
+        const n = String(it.name || '').trim().toLowerCase();
+        const idn = String(it.id || '').trim().toLowerCase();
+        if (!n && idn === catIdLc) return false;
+        if (n && (n === catIdLc || n === 'shield')) return false;
+        return true;
+      });
+
+      const isShieldCategory = catIdLc === 'shield' || catIdLc === 'shields' || catTitleLc === 'shield' || catTitleLc === 'shields';
+
+      let finalList = cleaned;
+      if (isShieldCategory) {
+        const existingNames = new Set(
+          cleaned
+            .map((it) => String(it.name || '').trim().toLowerCase())
+            .filter((n) => n)
+        );
+        const extraShields = EXTRA_SHIELDS.filter((s) => !existingNames.has(String(s.name || '').trim().toLowerCase()));
+        if (extraShields.length > 0) finalList = [...cleaned, ...extraShields];
+      }
+
+      finalList.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setItemsList(finalList);
+    } catch {
+      setItemsList([]);
+    } finally {
+      setItemsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadItemCategories();
+  }, [loadItemCategories]);
+
+  const pageTitle = 'Items - Database | Hero Siege Builder';
+  const pageDescription = 'Hero Siege item database.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Items', path: '/database/items' },
+      ]),
+      collectionPageLd({ name: 'Items', description: pageDescription, path: '/database/items' }),
+    ],
+    []
+  );
+
+  const handleWikiImageError = (e: SyntheticEvent<HTMLImageElement>) => {
+    e.currentTarget.style.display = 'none';
+  };
+
+  return (
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/items" structuredData={pageStructuredData}>
+      <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
+        <div className="lg:col-span-3 space-y-8">
+          {!selectedItemCategory ? (
+            <>
+              <div className="flex items-end justify-between border-b border-brand-dark/10 pb-4">
+                <div>
+                  <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">
+                    Item <span className="text-brand-orange">Database</span>
+                  </h1>
+                </div>
+                <span className="text-[11px] text-brand-darker/60 font-bold uppercase tracking-widest">
+                  {itemsLoading ? 'Carregando...' : `${itemCategories.length} categorias`}
+                </span>
+              </div>
+
+              {itemCategories.length === 0 && !itemsLoading ? (
+                <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 text-brand-darker/70 text-sm">
+                  Nenhuma categoria encontrada. Importe os dados para o Firestore e recarregue.
+                </div>
+              ) : null}
+
+              {(() => {
+                const groups: Record<string, ItemCategoryRow[]> = {};
+                itemCategories.forEach((cat) => {
+                  let g = cat.group || 'Outros';
+                  if ((cat.title || '').toLowerCase().includes('throwing')) g = 'Weapons';
+                  if (!groups[g]) groups[g] = [];
+                  groups[g].push(cat);
+                });
+                const order = ['Weapons', 'Armor', 'Jewellery', 'Special Items', 'Misc', 'Outros'];
+                return order
+                  .filter((g) => groups[g]?.length)
+                  .map((g) => (
+                    <div key={g} className="space-y-3">
+                      <h2 className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">{g}</h2>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {groups[g].map((cat) => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => loadItemsForCategory(cat)}
+                            className="group relative h-44 bg-white border border-brand-dark/10 rounded-2xl overflow-hidden text-left hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
+                          >
+                            <div className="w-full h-full flex items-center justify-center p-4">
+                              <img
+                                src={cat.image || 'https://herosiege.wiki.gg/images/Item_Chest.png'}
+                                alt={cat.title || cat.id}
+                                className="max-h-full max-w-full object-contain"
+                                onError={handleWikiImageError}
+                                loading="lazy"
+                              />
+                            </div>
+                            <div className="absolute bottom-0 left-0 w-full p-3 bg-black/40 backdrop-blur-sm">
+                              <div className="text-white font-bold uppercase text-xs tracking-wider">{cat.title || cat.id}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+              })()}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between border-b border-brand-dark/10 pb-4">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedItemCategory(null);
+                      setSelectedItem(null);
+                      setItemsList([]);
+                    }}
+                    className="text-[11px] uppercase tracking-widest font-bold text-brand-darker/60 hover:text-brand-darker"
+                  >
+                    ← Back
+                  </button>
+                  <h1 className="mt-2 font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">
+                    {selectedItemCategory.title || selectedItemCategory.id}
+                  </h1>
+                </div>
+                <span className="text-[11px] text-brand-darker/60 font-bold uppercase tracking-widest">
+                  {itemsLoading ? 'Carregando...' : `${itemsList.length} itens`}
+                </span>
+              </div>
+
+              {itemsList.length === 0 && !itemsLoading ? (
+                <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 text-brand-darker/70 text-sm">
+                  Nenhum item encontrado para esta categoria.
+                </div>
+              ) : null}
+
+              {(() => {
+                const isShieldCategory = (() => {
+                  const id = String(selectedItemCategory.id || '').trim().toLowerCase();
+                  const title = String(selectedItemCategory.title || '').trim().toLowerCase();
+                  return id === 'shield' || id === 'shields' || title === 'shield' || title === 'shields';
+                })();
+                const clean = itemsList.filter((it) => {
+                  if (!it.name || it.name.includes('●')) return false;
+                  if (isShieldCategory && !it.rarity) return false;
+                  return true;
+                });
+                const byRarity: Record<string, ItemRow[]> = {};
+                clean.forEach((it) => {
+                  const key = it.rarity || 'Sem raridade';
+                  if (!byRarity[key]) byRarity[key] = [];
+                  byRarity[key].push(it);
+                });
+                const rarityOrder = ['Satanic', 'Satanic Set', 'Heroic', 'Unholy', 'Angelic', 'Legendary', 'Epic', 'Rare', 'Magic', 'Normal', 'Common', 'Sem raridade'];
+                return rarityOrder
+                  .filter((r) => byRarity[r]?.length)
+                  .map((r) => (
+                    <div key={r} className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest border rounded-full ${rarityStyle(r).text}`}
+                          style={{ borderColor: rarityStyle(r).hex }}
+                        >
+                          {r}
+                        </div>
+                        <div className="h-px bg-brand-dark/10 flex-1" />
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {byRarity[r].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSelectedItem(item)}
+                            className="bg-white border-2 rounded-2xl p-4 transition-colors text-left hover:bg-brand-orange/5"
+                            style={{ boxShadow: rarityStyle(item.rarity).glow, borderColor: rarityStyle(item.rarity).hex }}
+                          >
+                            <div className="h-24 w-full flex items-center justify-center mb-3 bg-brand-bg rounded-xl border border-brand-dark/10">
+                              {getItemImage(item) ? (
+                                <img
+                                  src={getItemImage(item)}
+                                  alt={item.name || item.id}
+                                  className="max-h-full max-w-full object-contain"
+                                  onError={handleWikiImageError}
+                                  loading="lazy"
+                                />
+                              ) : null}
+                            </div>
+                            <div className={`font-bold text-sm leading-tight ${rarityStyle(item.rarity).text}`}>{item.name || item.id}</div>
+                            {item.rarity ? (
+                              <div className="mt-1 inline-block text-[10px] uppercase font-bold tracking-widest text-brand-darker/60">{item.rarity}</div>
+                            ) : null}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+              })()}
+            </>
+          )}
+        </div>
+
+        <Sidebar t={t} />
+      </div>
+
+      <Modal open={!!selectedItem} title={selectedItem?.name || 'Item'} onClose={closeModal} maxWidthClassName="max-w-2xl">
+        {selectedItem ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-brand-dark/10 rounded-2xl overflow-hidden">
+            <div className="p-6 border-b md:border-b-0 md:border-r border-brand-dark/10 flex items-center justify-center bg-brand-bg">
+              {getItemImage(selectedItem) ? (
+                <img
+                  src={getItemImage(selectedItem)}
+                  alt={selectedItem.name || selectedItem.id}
+                  className="max-h-40 object-contain"
+                  onError={handleWikiImageError}
+                />
+              ) : null}
+            </div>
+            <div className="p-6 md:col-span-2">
+              <h2 className={`text-2xl font-black uppercase italic tracking-tighter ${rarityStyle(selectedItem.rarity).text}`}>{selectedItem.name}</h2>
+              {selectedItem.rarity ? (
+                <div className="mt-1 inline-block text-[10px] uppercase font-bold tracking-widest text-brand-darker/60">{selectedItem.rarity}</div>
+              ) : null}
+              {selectedItem.description ? <p className="mt-4 text-brand-darker/70 text-sm leading-relaxed">{selectedItem.description}</p> : null}
+              {selectedItem.data ? (
+                <div className="mt-6">
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Detalhes</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-brand-darker">
+                    {Object.entries(selectedItem.data).map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-3 border-b border-brand-dark/10 py-1">
+                        <span className="text-brand-darker/60">{k}</span>
+                        <span className="text-brand-darker">{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </StandardPage>
   );
 }
@@ -3257,26 +3711,7 @@ export default function App() {
       />
       <Route
         path="/database/items"
-        element={
-          <StandardPage
-            title="Items - Database | Hero Siege Builder"
-            description="Game item database (coming soon)."
-            canonicalPath="/database/items"
-            structuredData={[
-              breadcrumbListLd([
-                { name: 'Home', path: '/' },
-                { name: 'Database', path: '/database' },
-                { name: 'Items', path: '/database/items' },
-              ]),
-              collectionPageLd({ name: 'Items', description: 'Game item database (coming soon).', path: '/database/items' }),
-            ]}
-          >
-            <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
-              <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Items</h1>
-              <p className="mt-2 text-sm text-brand-darker/60">Coming soon.</p>
-            </div>
-          </StandardPage>
-        }
+        element={<ItemsDatabasePage />}
       />
       <Route
         path="/tree"
