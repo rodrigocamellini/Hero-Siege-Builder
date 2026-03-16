@@ -16,6 +16,7 @@ import { TeamPage } from './pages/TeamPage';
 import { BlogPage } from './pages/BlogPage';
 import { BlogPostPage } from './pages/BlogPostPage';
 import { BlogEditorPage } from './pages/BlogEditorPage';
+import { ForumPage } from './pages/ForumPage';
 import { ContactPage } from './pages/ContactPage';
 import { classNames, type ClassKey } from './data/tierlist';
 import { Modal } from './components/Modal';
@@ -3127,6 +3128,7 @@ export default function App() {
       <Route path="/blog" element={<BlogPage />} />
       <Route path="/blog/editor" element={<BlogEditorPage />} />
       <Route path="/blog/:slug" element={<BlogPostPage />} />
+      <Route path="/forum" element={<ForumPage />} />
       <Route
         path="/contact"
         element={<ContactPage />}
