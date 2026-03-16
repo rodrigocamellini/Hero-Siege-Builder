@@ -129,7 +129,7 @@ export function BlogPage() {
   }, [items, loading]);
 
   return (
-    <StandardPage>
+    <StandardPage title="Blog | Hero Siege Builder" description="Latest Hero Siege news and updates." canonicalPath="/blog">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">

@@ -138,7 +138,7 @@ export function ContactPage() {
   };
 
   return (
-    <StandardPage>
+    <StandardPage title="Contact | Hero Siege Builder" description="Send a message, report a bug, or reach out for a partnership." canonicalPath="/contact">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
         <div className="flex items-end justify-between gap-4">
           <div>

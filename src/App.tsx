@@ -295,6 +295,47 @@ function sanitizeClassHtml(input: string) {
   return root.innerHTML;
 }
 
+const DEFAULT_SITE_ORIGIN = 'https://www.herosiegebuilder.com';
+
+function siteOrigin() {
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin.replace(/\/+$/, '');
+  return DEFAULT_SITE_ORIGIN;
+}
+
+function absoluteUrl(pathname: string) {
+  const base = siteOrigin();
+  const p = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return p === '/' ? `${base}/` : `${base}${p}`;
+}
+
+function breadcrumbListLd(items: Array<{ name: string; path: string }>) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((it, idx) => ({
+      '@type': 'ListItem',
+      position: idx + 1,
+      name: it.name,
+      item: absoluteUrl(it.path),
+    })),
+  };
+}
+
+function collectionPageLd(input: { name: string; description: string; path: string }) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: input.name,
+    description: input.description,
+    url: absoluteUrl(input.path),
+    isPartOf: {
+      '@type': 'WebSite',
+      name: 'Hero Siege Builder',
+      url: absoluteUrl('/'),
+    },
+  };
+}
+
 function ClassesDatabasePage() {
   const t = translations.en;
   const [activeFilter, setActiveFilter] = useState<ClassFilter>('ALL');
@@ -349,6 +390,20 @@ function ClassesDatabasePage() {
   const selectedClassName = selectedClassKey ? classNames[selectedClassKey] : '';
   const currentSection = selectedData?.sections?.[selectedTab] ?? null;
 
+  const pageTitle = 'Classes - Database | Hero Siege Builder';
+  const pageDescription = 'Browse all hero classes and view skills and class details.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Classes', path: '/database/classes' },
+      ]),
+      collectionPageLd({ name: 'Classes', description: pageDescription, path: '/database/classes' }),
+    ],
+    []
+  );
+
   useEffect(() => {
     if (!selectedClassKey) return;
     const container = document.querySelector('.class-wiki');
@@ -377,7 +432,7 @@ function ClassesDatabasePage() {
   }, [selectedClassKey, selectedTab, currentSection?.html]);
 
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/classes" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3">
           <div className="flex flex-col gap-8">
@@ -572,8 +627,22 @@ function RunesDatabasePage() {
     return runesData.filter((r) => `${r.name} ${r.tier}${r.lvl} ${r.stats}`.toUpperCase().includes(q));
   }, [search]);
 
+  const pageTitle = 'Runes - Database | Hero Siege Builder';
+  const pageDescription = 'Search runes and their effects in Hero Siege.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Runes', path: '/database/runes' },
+      ]),
+      collectionPageLd({ name: 'Runes', description: pageDescription, path: '/database/runes' }),
+    ],
+    []
+  );
+
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/runes" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-6">
           <div className="flex items-end justify-between border-b border-brand-dark/10 pb-4">
@@ -687,8 +756,22 @@ const chaosScaling: Array<{ towers: string; level: string }> = [
 function ChaosTowerDatabasePage() {
   const t = translations.en;
 
+  const pageTitle = 'Chaos Tower - Database | Hero Siege Builder';
+  const pageDescription = 'Chaos Tower dungeon details, mechanics, scaling, and rewards.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Chaos Tower', path: '/database/chaos-tower' },
+      ]),
+      collectionPageLd({ name: 'Chaos Tower', description: pageDescription, path: '/database/chaos-tower' }),
+    ],
+    []
+  );
+
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/chaos-tower" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-10">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-8 items-start">
@@ -995,8 +1078,22 @@ function MercenariesDatabasePage() {
 
   const currentSkills = activeTab === 'knight' ? knightSkills : activeTab === 'archer' ? archerSkills : magisterSkills;
 
+  const pageTitle = 'Mercenaries - Database | Hero Siege Builder';
+  const pageDescription = 'Mercenary types, skills, and where to find them.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Mercenaries', path: '/database/mercenarios' },
+      ]),
+      collectionPageLd({ name: 'Mercenaries', description: pageDescription, path: '/database/mercenarios' }),
+    ],
+    []
+  );
+
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/mercenarios" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-8">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -1134,8 +1231,21 @@ const chestKeys: Array<{ name: string; icon: string; chest: string }> = [
 
 function KeysDatabasePage() {
   const t = translations.en;
+  const pageTitle = 'Keys - Database | Hero Siege Builder';
+  const pageDescription = 'Dungeon keys, unique zone keys, and chest keys.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Keys', path: '/database/chaves' },
+      ]),
+      collectionPageLd({ name: 'Keys', description: pageDescription, path: '/database/chaves' }),
+    ],
+    []
+  );
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/chaves" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-8">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -1372,8 +1482,22 @@ function AugmentsDatabasePage() {
     }
   }, []);
 
+  const pageTitle = 'Augments - Database | Hero Siege Builder';
+  const pageDescription = 'Angelic augments overview and list.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Augments', path: '/database/augments' },
+      ]),
+      collectionPageLd({ name: 'Augments', description: pageDescription, path: '/database/augments' }),
+    ],
+    []
+  );
+
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/augments" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-8">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -1566,8 +1690,21 @@ const miningNodes: MiningNode[] = [
 
 function MiningDatabasePage() {
   const t = translations.en;
+  const pageTitle = 'Mining - Database | Hero Siege Builder';
+  const pageDescription = 'Mining nodes, required level, and prospecting results.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Mining', path: '/database/mineracao' },
+      ]),
+      collectionPageLd({ name: 'Mining', description: pageDescription, path: '/database/mineracao' }),
+    ],
+    []
+  );
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/mineracao" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-6">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -1795,8 +1932,22 @@ function GemsDatabasePage() {
     },
   ];
 
+  const pageTitle = 'Gems & Jewels - Database | Hero Siege Builder';
+  const pageDescription = 'Socketables and their effects.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Gems & Jewels', path: '/database/gems' },
+      ]),
+      collectionPageLd({ name: 'Gems & Jewels', description: pageDescription, path: '/database/gems' }),
+    ],
+    []
+  );
+
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/gems" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-8">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -2334,8 +2485,22 @@ function CharmsDatabasePage() {
     return s;
   };
 
+  const pageTitle = 'Charms - Database | Hero Siege Builder';
+  const pageDescription = 'Charms list with tiers, levels, and stats.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Charms', path: '/database/charms' },
+      ]),
+      collectionPageLd({ name: 'Charms', description: pageDescription, path: '/database/charms' }),
+    ],
+    []
+  );
+
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/charms" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-6">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -2644,6 +2809,20 @@ function RelicsDatabasePage() {
   const t = translations.en;
   const [query, setQuery] = useState('');
 
+  const pageTitle = 'Relics - Database | Hero Siege Builder';
+  const pageDescription = 'Passive relic scaling and other relics.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Relics', path: '/database/relics' },
+      ]),
+      collectionPageLd({ name: 'Relics', description: pageDescription, path: '/database/relics' }),
+    ],
+    []
+  );
+
   const valueClass = (v: string) => {
     const trimmed = String(v ?? '').trim();
     if (!trimmed || trimmed === '---') return 'text-brand-darker/40';
@@ -2791,7 +2970,7 @@ function RelicsDatabasePage() {
   };
 
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/relics" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-6">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -2868,8 +3047,21 @@ function RelicsDatabasePage() {
 
 function QuestsDatabasePage() {
   const t = translations.en;
+  const pageTitle = 'Quests - Database | Hero Siege Builder';
+  const pageDescription = 'Quest database.';
+  const pageStructuredData = useMemo(
+    () => [
+      breadcrumbListLd([
+        { name: 'Home', path: '/' },
+        { name: 'Database', path: '/database' },
+        { name: 'Quests', path: '/database/quests' },
+      ]),
+      collectionPageLd({ name: 'Quests', description: pageDescription, path: '/database/quests' }),
+    ],
+    []
+  );
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/database/quests" structuredData={pageStructuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-6">
           <div className="border-b border-brand-dark/10 pb-4">
@@ -2902,7 +3094,7 @@ export default function App() {
       <Route
         path="/account"
         element={
-          <StandardPage>
+          <StandardPage title="Account | Hero Siege Builder" description="Account options." canonicalPath="/account" noindex>
             <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
               <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Account</h1>
               <p className="mt-2 text-sm text-brand-darker/60">Escolha uma opção.</p>
@@ -2942,7 +3134,18 @@ export default function App() {
       <Route
         path="/database"
         element={
-          <StandardPage>
+          <StandardPage
+            title="Database | Hero Siege Builder"
+            description="Explore classes, items, and game data."
+            canonicalPath="/database"
+            structuredData={[
+              breadcrumbListLd([
+                { name: 'Home', path: '/' },
+                { name: 'Database', path: '/database' },
+              ]),
+              collectionPageLd({ name: 'Database', description: 'Explore classes, items, and game data.', path: '/database' }),
+            ]}
+          >
             <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
               <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Database</h1>
               <p className="mt-2 text-sm text-brand-darker/60">Explore classes, items, and game data.</p>
@@ -3053,7 +3256,19 @@ export default function App() {
       <Route
         path="/database/items"
         element={
-          <StandardPage>
+          <StandardPage
+            title="Items - Database | Hero Siege Builder"
+            description="Game item database (coming soon)."
+            canonicalPath="/database/items"
+            structuredData={[
+              breadcrumbListLd([
+                { name: 'Home', path: '/' },
+                { name: 'Database', path: '/database' },
+                { name: 'Items', path: '/database/items' },
+              ]),
+              collectionPageLd({ name: 'Items', description: 'Game item database (coming soon).', path: '/database/items' }),
+            ]}
+          >
             <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
               <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Items</h1>
               <p className="mt-2 text-sm text-brand-darker/60">Coming soon.</p>
@@ -3064,7 +3279,18 @@ export default function App() {
       <Route
         path="/tree"
         element={
-          <StandardPage>
+          <StandardPage
+            title="Tree | Hero Siege Builder"
+            description="Choose Ether or Incarnation tree."
+            canonicalPath="/tree"
+            structuredData={[
+              breadcrumbListLd([
+                { name: 'Home', path: '/' },
+                { name: 'Tree', path: '/tree' },
+              ]),
+              collectionPageLd({ name: 'Tree', description: 'Choose Ether or Incarnation tree.', path: '/tree' }),
+            ]}
+          >
             <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
               <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Tree</h1>
               <p className="mt-2 text-sm text-brand-darker/60">Choose a section.</p>
@@ -3091,7 +3317,16 @@ export default function App() {
       <Route
         path="/tree/ether"
         element={
-          <StandardPage>
+          <StandardPage
+            title="Ether Tree | Hero Siege Builder"
+            description="Ether Tree planner."
+            canonicalPath="/tree/ether"
+            structuredData={breadcrumbListLd([
+              { name: 'Home', path: '/' },
+              { name: 'Tree', path: '/tree' },
+              { name: 'Ether', path: '/tree/ether' },
+            ])}
+          >
             <div className="fixed inset-x-0 bottom-0 top-[64px] z-40">
               <EtherTree />
             </div>
@@ -3101,7 +3336,16 @@ export default function App() {
       <Route
         path="/tree/incarnation"
         element={
-          <StandardPage>
+          <StandardPage
+            title="Incarnation Tree | Hero Siege Builder"
+            description="Incarnation Tree planner."
+            canonicalPath="/tree/incarnation"
+            structuredData={breadcrumbListLd([
+              { name: 'Home', path: '/' },
+              { name: 'Tree', path: '/tree' },
+              { name: 'Incarnation', path: '/tree/incarnation' },
+            ])}
+          >
             <div className="fixed inset-x-0 bottom-0 top-[64px] z-40">
               <IncarnationTree />
             </div>

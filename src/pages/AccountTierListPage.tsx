@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { TriangleAlert } from 'lucide-react';
 import { StandardPage } from '../components/StandardPage';
 import { classKeys, classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
 import { firestore } from '../firebase';
@@ -26,6 +27,7 @@ function emptyVotes() {
 export function AccountTierListPage() {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const isAccountPath = location.pathname.startsWith('/account/');
   const [votes, setVotes] = useState<Record<ClassKey, Tier | ''>>(() => emptyVotes());
   const [loadingVotes, setLoadingVotes] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,20 +72,20 @@ export function AccountTierListPage() {
   }, [user]);
 
   const callbackUrl = useMemo(() => `${location.pathname}${location.search}`, [location.pathname, location.search]);
-  const canSubmit = useMemo(() => classKeys.some((k) => votes[k] !== ''), [votes]);
+  const allSelected = useMemo(() => classKeys.every((k) => votes[k] !== ''), [votes]);
 
   async function onSave() {
     setError(null);
     setSaved(false);
     if (!user) return;
-    if (!canSubmit) {
-      setError('Selecione pelo menos uma classe.');
+    if (!allSelected) {
+      setError('Selecione o tier das 24 classes antes de salvar.');
       return;
     }
 
     setSaving(true);
     try {
-      const payload: StoredVote[] = classKeys.filter((k) => votes[k] !== '').map((k) => ({ classKey: k, tier: votes[k] as Tier }));
+      const payload: StoredVote[] = classKeys.map((k) => ({ classKey: k, tier: votes[k] as Tier }));
       await setDoc(
         doc(firestore, 'tierlistVotes', user.uid),
         {
@@ -102,10 +104,31 @@ export function AccountTierListPage() {
   }
 
   return (
-    <StandardPage>
+    <StandardPage
+      title="Tier List | Hero Siege Builder"
+      description="Vote on the tier list for each class."
+      canonicalPath="/tierlist"
+      noindex={isAccountPath}
+    >
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
         <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Tier List</h1>
         <p className="mt-2 text-sm text-brand-darker/60">Vote em que tier cada classe deveria ficar. Você pode alterar depois.</p>
+        <div className="mt-6 border-2 border-dashed border-yellow-400/80 bg-yellow-50 rounded-2xl p-4 md:p-5 flex items-start gap-3">
+          <div className="shrink-0 w-10 h-10 rounded-xl bg-yellow-400/20 text-yellow-900 flex items-center justify-center">
+            <TriangleAlert className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 text-sm text-yellow-950">
+            Our Tier List is based on community voting. Each class is placed in the tier where it receives the majority of votes. Because it reflects community opinion, it may not always match a class&apos;s true strength or optimal placement.
+          </div>
+        </div>
+        <div className="mt-4 border-2 border-dashed border-sky-400/80 bg-sky-50 rounded-2xl p-4 md:p-5 flex items-start gap-3">
+          <div className="shrink-0 w-10 h-10 rounded-xl bg-sky-400/20 text-sky-900 flex items-center justify-center">
+            <TriangleAlert className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 text-sm text-sky-950">
+            For your vote to be counted, you must assign a tier to all 24 classes and click &quot;Save votes&quot;. You can update any class anytime—just change the tier and save again.
+          </div>
+        </div>
 
         {loading ? (
           <div className="mt-8 bg-white border border-brand-dark/10 rounded-2xl p-6 animate-pulse h-24" />
@@ -168,4 +191,3 @@ export function AccountTierListPage() {
     </StandardPage>
   );
 }
-

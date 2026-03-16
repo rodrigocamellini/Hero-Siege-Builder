@@ -180,7 +180,7 @@ export function AccountSettingsPage() {
 
   if (loading) {
     return (
-      <StandardPage>
+      <StandardPage title="Conta - Configurações | Hero Siege Builder" description="Edite sua foto, nick e senha." canonicalPath="/account/settings" noindex>
         <div className="max-w-3xl mx-auto px-4 py-8 md:py-16">
           <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 animate-pulse h-40" />
         </div>
@@ -190,7 +190,7 @@ export function AccountSettingsPage() {
 
   if (!user) {
     return (
-      <StandardPage>
+      <StandardPage title="Conta - Configurações | Hero Siege Builder" description="Edite sua foto, nick e senha." canonicalPath="/account/settings" noindex>
         <div className="max-w-3xl mx-auto px-4 py-8 md:py-16">
           <div className="bg-white border border-brand-dark/10 rounded-2xl p-6">
             <div className="text-sm font-bold text-brand-darker">Você precisa estar logado para editar sua conta.</div>
@@ -208,7 +208,7 @@ export function AccountSettingsPage() {
   const avatarPreview = photoURL.trim() || null;
 
   return (
-    <StandardPage>
+    <StandardPage title="Conta - Configurações | Hero Siege Builder" description="Edite sua foto, nick e senha." canonicalPath="/account/settings" noindex>
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-16 space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>

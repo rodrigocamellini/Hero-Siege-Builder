@@ -106,7 +106,7 @@ export function TeamPage() {
   };
 
   return (
-    <StandardPage>
+    <StandardPage title="Team | Hero Siege Builder" description="Meet the Hero Siege Builder team." canonicalPath="/team">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
         <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Team</h1>
 

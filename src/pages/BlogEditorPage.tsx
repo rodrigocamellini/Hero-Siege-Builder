@@ -315,7 +315,7 @@ export function BlogEditorPage() {
 
   if (!loading && rolesLoading) {
     return (
-      <StandardPage>
+      <StandardPage title="Blog Editor | Hero Siege Builder" description="Create and edit blog posts." canonicalPath="/blog/editor" noindex>
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
           <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Blog Editor</h1>
           <p className="mt-2 text-sm text-brand-darker/60">Loading permissions...</p>
@@ -326,7 +326,7 @@ export function BlogEditorPage() {
 
   if (!loading && user && !canWrite) {
     return (
-      <StandardPage>
+      <StandardPage title="Blog Editor | Hero Siege Builder" description="Create and edit blog posts." canonicalPath="/blog/editor" noindex>
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
           <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Blog Editor</h1>
           <p className="mt-2 text-sm text-brand-darker/60">No permission to create posts.</p>
@@ -341,7 +341,7 @@ export function BlogEditorPage() {
   }
 
   return (
-    <StandardPage>
+    <StandardPage title="Blog Editor | Hero Siege Builder" description="Create and edit blog posts." canonicalPath="/blog/editor" noindex>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
         <div className="flex items-end justify-between gap-4">
           <div className="min-w-0">

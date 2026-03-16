@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Filter } from 'lucide-react';
+import { Filter, TriangleAlert } from 'lucide-react';
 import { collection, getDocs, limit, orderBy, query, where, type Timestamp } from 'firebase/firestore';
 import { BuildItem } from '../../components/BuildItem';
 import { NewsCard } from '../../components/NewsCard';
@@ -32,6 +32,53 @@ export function HomePage() {
   const currentYear = new Date().getFullYear();
   const [homePosts, setHomePosts] = useState<HomeBlogPost[]>([]);
   const [homePostsLoading, setHomePostsLoading] = useState(true);
+
+  useEffect(() => {
+    const baseUrl = window.location.origin.replace(/\/+$/, '');
+    const canonicalUrl = `${baseUrl}/`;
+    const title = 'Hero Siege Builder';
+    const description = 'Build planner, databases, and tools for Hero Siege.';
+
+    document.title = title;
+
+    const ensureMeta = (selector: string, attrs: Record<string, string>, content?: string) => {
+      let el = document.head.querySelector<HTMLMetaElement>(selector);
+      if (!el) {
+        el = document.createElement('meta');
+        for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+        document.head.appendChild(el);
+      }
+      if (typeof content === 'string') el.setAttribute('content', content);
+      el.dataset.hsbManaged = '1';
+    };
+
+    const ensureLink = (selector: string, attrs: Record<string, string>, href?: string) => {
+      let el = document.head.querySelector<HTMLLinkElement>(selector);
+      if (!el) {
+        el = document.createElement('link');
+        for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+        document.head.appendChild(el);
+      }
+      if (typeof href === 'string') el.setAttribute('href', href);
+      el.dataset.hsbManaged = '1';
+    };
+
+    const robots = document.head.querySelector<HTMLMetaElement>('meta[name="robots"][data-hsb-managed="1"]');
+    if (robots) robots.remove();
+
+    ensureMeta('meta[name="description"]', { name: 'description' }, description);
+    ensureLink('link[rel="canonical"]', { rel: 'canonical' }, canonicalUrl);
+    ensureMeta('meta[property="og:title"]', { property: 'og:title' }, title);
+    ensureMeta('meta[property="og:description"]', { property: 'og:description' }, description);
+    ensureMeta('meta[property="og:url"]', { property: 'og:url' }, canonicalUrl);
+    ensureMeta('meta[property="og:type"]', { property: 'og:type' }, 'website');
+    ensureMeta('meta[name="twitter:card"]', { name: 'twitter:card' }, 'summary');
+    ensureMeta('meta[name="twitter:title"]', { name: 'twitter:title' }, title);
+    ensureMeta('meta[name="twitter:description"]', { name: 'twitter:description' }, description);
+
+    const existingLd = Array.from(document.head.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"][data-hsb-managed="1"]'));
+    for (const s of existingLd) s.remove();
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -104,6 +151,15 @@ export function HomePage() {
 
             <section>
               <SeasonTierList t={t} />
+              <div className="mt-6 border-2 border-dashed border-yellow-400/80 bg-yellow-50 rounded-2xl p-4 md:p-5 flex items-start gap-3">
+                <div className="shrink-0 w-10 h-10 rounded-xl bg-yellow-400/20 text-yellow-900 flex items-center justify-center">
+                  <TriangleAlert className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 text-sm text-yellow-950">
+                  Our Tier List is based on community voting. Each class is placed in the tier where it receives the majority of votes. Because it reflects
+                  community opinion, it may not always match a class&apos;s true strength or optimal placement.
+                </div>
+              </div>
             </section>
 
             <section>

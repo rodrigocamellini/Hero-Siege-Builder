@@ -8,7 +8,7 @@ export const translations = {
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
     popularClasses: 'Latest News',
-    seasonTierList: { title: 'Season Tier List', subtitle: 'Season 9 - Incarnation', updated: 'Updated: Today' },
+    seasonTierList: { title: 'Community Season Tier List', subtitle: 'Season 9 - Incarnation', updated: 'Updated: Today' },
     seasonCountdown: {
       heading: 'Next Season',
       subheading: 'Season 9 Start',
@@ -59,7 +59,7 @@ export const translations = {
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
     popularClasses: 'Latest News',
-    seasonTierList: { title: 'Season Tier List', subtitle: 'Season 9 - Incarnation', updated: 'Updated: Today' },
+    seasonTierList: { title: 'Community Season Tier List', subtitle: 'Season 9 - Incarnation', updated: 'Updated: Today' },
     seasonCountdown: {
       heading: 'Next Season',
       subheading: 'Season 9 Start',
@@ -110,7 +110,7 @@ export const translations = {
     heroSubtitle: 'СОЗДАВАЙТЕ, ДЕЛИТЕСЬ И ДОМИНИРУЙТЕ С САМЫМ ПОЛНЫМ СТРОИТЕЛЕМ СООБЩЕСТВА.',
     createBuild: 'Создать билд',
     popularClasses: 'Latest News',
-    seasonTierList: { title: 'Season Tier List', subtitle: 'Season 9 - Incarnation', updated: 'Updated: Today' },
+    seasonTierList: { title: 'Community Season Tier List', subtitle: 'Season 9 - Incarnation', updated: 'Updated: Today' },
     seasonCountdown: {
       heading: 'Next Season',
       subheading: 'Season 9 Start',

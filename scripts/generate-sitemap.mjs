@@ -48,7 +48,8 @@ function normalizeRoutePath(p) {
   if (!p) return null;
   if (p === '*') return null;
   if (p.endsWith('/*')) return null;
-  const v = p.startsWith('/') ? p : `/${p}`;
+  if (!p.startsWith('/')) return null;
+  const v = p;
   return v.replace(/\/+$/, '') || '/';
 }
 
@@ -56,7 +57,8 @@ function normalizeRouteTemplate(p) {
   if (!p) return null;
   if (p === '*') return null;
   if (p.endsWith('/*')) return null;
-  const v = p.startsWith('/') ? p : `/${p}`;
+  if (!p.startsWith('/')) return null;
+  const v = p;
   return v.replace(/\/+$/, '') || '/';
 }
 
@@ -199,8 +201,8 @@ const routeTemplates = unique(rawPaths.map(normalizeRouteTemplate).filter(Boolea
 const staticPaths = unique(rawPaths.filter((p) => !String(p).includes(':')).map(normalizeRoutePath).filter(Boolean));
 const dynamicPaths = await dynamicPathsFromFirestore(routeTemplates);
 
-const excludedPrefixes = ['/admin'];
-const excludedExact = new Set(['/login', '/register', '/account', '/account/tierlist']);
+const excludedPrefixes = ['/admin', '/account'];
+const excludedExact = new Set(['/login', '/register', '/blog/editor', '/account/tierlist']);
 
 const publicRoutes = unique([...staticPaths, ...dynamicPaths])
   .filter((p) => !excludedExact.has(p))

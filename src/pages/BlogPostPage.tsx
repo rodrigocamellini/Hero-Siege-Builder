@@ -401,10 +401,14 @@ export function BlogPostPage() {
   }
 
   const callbackUrl = `${location.pathname}${location.search}`;
+  const canonicalPath = slug ? `/blog/${encodeURIComponent(slug)}` : '/blog';
+  const pageTitle = post?.title ? `${post.title} | Hero Siege Builder` : 'Blog Post | Hero Siege Builder';
+  const pageDescription = post?.excerpt?.trim() ? post.excerpt.trim() : 'Read the latest Hero Siege news and updates.';
+  const noindex = searchParams.get('preview') === '1' || (post?.status && post.status !== 'PUBLISHED');
   const contentHtml = useMemo(() => (post ? sanitizeHtml(post.content) : ''), [post?.content]);
 
   return (
-    <StandardPage>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath={canonicalPath} noindex={noindex}>
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-16">
         <Link to="/blog" className="text-xs font-bold uppercase tracking-widest text-brand-darker/60 hover:text-brand-orange">
           Back
