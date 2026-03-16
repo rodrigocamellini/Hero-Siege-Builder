@@ -1,7 +1,7 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { AdminSidebarLink } from '../features/admin/AdminSidebarLink';
@@ -31,6 +31,27 @@ function normalizeImageUrl(path: unknown) {
   if (path.startsWith('http')) return path;
   if (path.startsWith('public/')) return `/${path.substring(7)}`;
   if (!path.includes('/') && (path.endsWith('.webp') || path.endsWith('.png'))) return `/images/ether/${path}`;
+  if (!path.startsWith('/')) return `/${path}`;
+  return path;
+}
+
+type IncarnationNodeRow = {
+  id: string;
+  name: string;
+  description: string;
+  image: string;
+  grandNode: boolean;
+  socketJewel: boolean;
+  blackHole: boolean;
+};
+
+type IncarnationBgRow = EtherBgRow;
+
+function normalizeIncarnationImageUrl(path: unknown) {
+  if (typeof path !== 'string' || !path) return '';
+  if (path.startsWith('http')) return path;
+  if (path.startsWith('public/')) return `/${path.substring(7)}`;
+  if (!path.includes('/') && (path.endsWith('.webp') || path.endsWith('.png'))) return `/images/incarnation/${path}`;
   if (!path.startsWith('/')) return `/${path}`;
   return path;
 }
@@ -776,7 +797,7 @@ function AdminEtherTreePanel() {
             <textarea
               value={formDesc}
               onChange={(e) => setFormDesc(e.target.value)}
-              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none min-h-32"
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none min-h-48"
             />
           </label>
 
@@ -916,6 +937,984 @@ function AdminEtherTreePanel() {
   );
 }
 
+function AdminIncarnationTreePanel() {
+  const [nodes, setNodes] = useState<IncarnationNodeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [maxPoints, setMaxPoints] = useState(60);
+  const [infinitePoints, setInfinitePoints] = useState(false);
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('Page is under maintenance. Please check back soon.');
+  const [configLoading, setConfigLoading] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  const [bgImages, setBgImages] = useState<IncarnationBgRow[]>([]);
+  const [bgLoading, setBgLoading] = useState(true);
+  const [editingBgId, setEditingBgId] = useState<string | null>(null);
+  const [bgName, setBgName] = useState('');
+  const [bgX, setBgX] = useState('');
+  const [bgY, setBgY] = useState('');
+  const [bgW, setBgW] = useState('150');
+  const [bgH, setBgH] = useState('150');
+  const [bgUrl, setBgUrl] = useState('');
+  const [savingBg, setSavingBg] = useState(false);
+  const [confirmDeleteBgId, setConfirmDeleteBgId] = useState<string | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [formNodeId, setFormNodeId] = useState('');
+  const [formName, setFormName] = useState('');
+  const [formDesc, setFormDesc] = useState('');
+  const [formImage, setFormImage] = useState('');
+  const [formGrandNode, setFormGrandNode] = useState(false);
+  const [formSocketJewel, setFormSocketJewel] = useState(false);
+  const [formBlackHole, setFormBlackHole] = useState(false);
+  const [savingNode, setSavingNode] = useState(false);
+  const [confirmDeleteNodeId, setConfirmDeleteNodeId] = useState<string | null>(null);
+  const [flash, setFlash] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const [jsonModal, setJsonModal] = useState<'export' | 'import' | null>(null);
+  const [jsonText, setJsonText] = useState('');
+  const [jsonBusy, setJsonBusy] = useState(false);
+  const [jsonCopied, setJsonCopied] = useState(false);
+  const [quickNodeId, setQuickNodeId] = useState('1');
+
+  const nodeOptions = useMemo(() => Array.from({ length: 1621 }, (_, i) => String(i + 1)), []);
+
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, IncarnationNodeRow>();
+    for (const n of nodes) map.set(n.id, n);
+    return map;
+  }, [nodes]);
+
+  const allNodes = useMemo(() => {
+    return nodeOptions.map((id) => {
+      const existing = nodeMap.get(id);
+      if (existing) return existing;
+      return { id, name: '', description: '', image: '', grandNode: false, socketJewel: false, blackHole: false } satisfies IncarnationNodeRow;
+    });
+  }, [nodeOptions, nodeMap]);
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      setConfigLoading(true);
+      try {
+        const snap = await getDoc(doc(firestore, 'config', 'incarnation_tree'));
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          if (typeof data?.maxPoints === 'number') setMaxPoints(data.maxPoints);
+          if (typeof data?.infinitePoints === 'boolean') setInfinitePoints(data.infinitePoints);
+          if (typeof data?.maintenanceEnabled === 'boolean') setMaintenanceEnabled(data.maintenanceEnabled);
+          if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setMaintenanceMessage(data.maintenanceMessage);
+        }
+      } catch (err) {
+        setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao carregar configuração.' });
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+    void loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(firestore, 'incarnation_tree_nodes'),
+      (snap) => {
+        const list: IncarnationNodeRow[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          list.push({
+            id: d.id,
+            name: typeof data?.name === 'string' ? data.name : '',
+            description: typeof data?.description === 'string' ? data.description : '',
+            image: typeof data?.image === 'string' ? data.image : '',
+            grandNode: typeof data?.grandNode === 'boolean' ? data.grandNode : false,
+            socketJewel: typeof data?.socketJewel === 'boolean' ? data.socketJewel : false,
+            blackHole: typeof data?.blackHole === 'boolean' ? data.blackHole : false,
+          });
+        });
+        list.sort((a, b) => Number(a.id) - Number(b.id) || a.id.localeCompare(b.id));
+        setNodes(list);
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(firestore, 'incarnation_backgrounds'),
+      (snap) => {
+        const list: IncarnationBgRow[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          if (typeof data?.x !== 'number' || typeof data?.y !== 'number') return;
+          list.push({
+            id: d.id,
+            name: typeof data?.name === 'string' ? data.name : '',
+            image: typeof data?.image === 'string' ? data.image : '',
+            x: data.x,
+            y: data.y,
+            width: typeof data?.width === 'number' ? data.width : 150,
+            height: typeof data?.height === 'number' ? data.height : 150,
+            opacity: typeof data?.opacity === 'number' ? data.opacity : 1,
+          });
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+        setBgImages(list);
+        setBgLoading(false);
+      },
+      () => setBgLoading(false),
+    );
+    return () => unsub();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allNodes;
+    return allNodes.filter((n) => n.id.includes(q) || n.name.toLowerCase().includes(q) || n.description.toLowerCase().includes(q));
+  }, [allNodes, query]);
+
+  const filteredBg = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return bgImages;
+    return bgImages.filter((b) => b.id.includes(q) || b.name.toLowerCase().includes(q) || b.image.toLowerCase().includes(q));
+  }, [bgImages, query]);
+
+  const openNewNode = useCallback(() => {
+    setEditingNodeId(null);
+    setFormNodeId(quickNodeId);
+    setFormName('');
+    setFormDesc('');
+    setFormImage('');
+    setFormGrandNode(false);
+    setFormSocketJewel(false);
+    setFormBlackHole(false);
+    setModalOpen(true);
+  }, [quickNodeId]);
+
+  const openEditNode = useCallback((n: IncarnationNodeRow) => {
+    setEditingNodeId(n.id);
+    setFormNodeId(n.id);
+    setFormName(n.name || '');
+    setFormDesc(n.description || '');
+    setFormImage(n.image || '');
+    setFormGrandNode(!!n.grandNode);
+    setFormSocketJewel(!!n.socketJewel);
+    setFormBlackHole(!!n.blackHole);
+    setModalOpen(true);
+  }, []);
+
+  const openQuickNode = useCallback(() => {
+    const id = quickNodeId.trim();
+    if (!id) return;
+    const existing = nodeMap.get(id);
+    if (existing) {
+      openEditNode(existing);
+      return;
+    }
+    setEditingNodeId(null);
+    setFormNodeId(id);
+    setFormName('');
+    setFormDesc('');
+    setFormImage('');
+    setFormGrandNode(false);
+    setFormSocketJewel(false);
+    setFormBlackHole(false);
+    setModalOpen(true);
+  }, [nodeMap, openEditNode, quickNodeId]);
+
+  const nodeRows = useMemo(() => {
+    return filtered.map((n, idx) => {
+      const url = normalizeIncarnationImageUrl(n.image);
+      return (
+        <tr key={n.id} className={idx % 2 === 0 ? 'bg-brand-bg/40' : 'bg-white'}>
+          <td className="px-3 py-2 font-mono font-bold text-brand-darker/70">{n.id}</td>
+          <td className="px-3 py-2">
+            {url ? <img src={url} alt={n.name || n.id} className="w-7 h-7 object-contain" /> : <span className="text-brand-darker/40">-</span>}
+          </td>
+          <td className="px-3 py-2 font-bold text-brand-darker">{n.name || '-'}</td>
+          <td className="px-3 py-2 text-brand-darker/70 max-w-[520px] truncate">{n.description || '-'}</td>
+          <td className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openEditNode(n)}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker"
+                title="Editar"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteNodeId(n.id)}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600"
+                title="Excluir"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </td>
+        </tr>
+      );
+    });
+  }, [filtered, openEditNode]);
+
+  const saveNode = async () => {
+    const nodeId = formNodeId.trim();
+    if (!nodeId) {
+      setFlash({ type: 'error', text: 'ID do node é obrigatório.' });
+      return;
+    }
+    const numericId = Number(nodeId);
+    if (!Number.isInteger(numericId) || numericId < 1 || numericId > 1621) {
+      setFlash({ type: 'error', text: 'ID inválido. Use um número de 1 a 1621.' });
+      return;
+    }
+    setSavingNode(true);
+    setFlash(null);
+    try {
+      await setDoc(
+        doc(firestore, 'incarnation_tree_nodes', nodeId),
+        {
+          name: formName,
+          description: formDesc,
+          image: formImage,
+          grandNode: formGrandNode,
+          socketJewel: formSocketJewel,
+          blackHole: formBlackHole,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      setFlash({ type: 'ok', text: 'Node salvo.' });
+      setModalOpen(false);
+    } catch {
+      setFlash({ type: 'error', text: 'Falha ao salvar node.' });
+    } finally {
+      setSavingNode(false);
+    }
+  };
+
+  const deleteNode = async (id: string) => {
+    try {
+      await deleteDoc(doc(firestore, 'incarnation_tree_nodes', id));
+      setFlash({ type: 'ok', text: 'Node removido.' });
+    } catch {
+      setFlash({ type: 'error', text: 'Falha ao remover node.' });
+    } finally {
+      setConfirmDeleteNodeId(null);
+    }
+  };
+
+  const saveConfig = async () => {
+    setSavingConfig(true);
+    setFlash(null);
+    try {
+      await setDoc(
+        doc(firestore, 'config', 'incarnation_tree'),
+        { maxPoints: Number(maxPoints) || 0, infinitePoints, maintenanceEnabled, maintenanceMessage: maintenanceMessage.trim(), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setFlash({ type: 'ok', text: 'Configuração salva.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar configuração.' });
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const openExportJson = () => {
+    setJsonCopied(false);
+    setJsonText(
+      JSON.stringify(
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          config: { maxPoints, infinitePoints, maintenanceEnabled, maintenanceMessage: maintenanceMessage.trim() },
+          nodes: nodes.map((n) => ({
+            id: n.id,
+            name: n.name,
+            description: n.description,
+            image: n.image,
+            grandNode: n.grandNode,
+            socketJewel: n.socketJewel,
+            blackHole: n.blackHole,
+          })),
+          backgrounds: bgImages.map((b) => ({
+            id: b.id,
+            name: b.name,
+            image: b.image,
+            x: b.x,
+            y: b.y,
+            width: b.width,
+            height: b.height,
+            opacity: b.opacity,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    setJsonModal('export');
+  };
+
+  const openImportJson = () => {
+    setJsonCopied(false);
+    setJsonText('');
+    setJsonModal('import');
+  };
+
+  const copyJsonToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(jsonText);
+      setJsonCopied(true);
+      window.setTimeout(() => setJsonCopied(false), 1800);
+    } catch {
+      setJsonCopied(false);
+    }
+  };
+
+  const runImportJson = async () => {
+    setJsonBusy(true);
+    setFlash(null);
+    try {
+      const parsed = JSON.parse(jsonText) as any;
+      const nodesToImport: Array<any> = Array.isArray(parsed?.nodes) ? parsed.nodes : [];
+      const bgsToImport: Array<any> = Array.isArray(parsed?.backgrounds) ? parsed.backgrounds : [];
+      const cfg = typeof parsed?.config === 'object' && parsed?.config ? parsed.config : null;
+
+      if (cfg) {
+        const cfgMaxPoints = typeof cfg.maxPoints === 'number' ? cfg.maxPoints : Number(cfg.maxPoints);
+        const cfgInfinite = typeof cfg.infinitePoints === 'boolean' ? cfg.infinitePoints : cfg.infinitePoints === 'true';
+        const cfgMaintenanceEnabled =
+          typeof cfg.maintenanceEnabled === 'boolean' ? cfg.maintenanceEnabled : cfg.maintenanceEnabled === 'true' ? true : cfg.maintenanceEnabled === 'false' ? false : null;
+        const cfgMaintenanceMessage = typeof cfg.maintenanceMessage === 'string' ? cfg.maintenanceMessage.trim() : '';
+        if (Number.isFinite(cfgMaxPoints) || typeof cfgInfinite === 'boolean' || typeof cfgMaintenanceEnabled === 'boolean' || cfgMaintenanceMessage) {
+          await setDoc(
+            doc(firestore, 'config', 'incarnation_tree'),
+            {
+              ...(Number.isFinite(cfgMaxPoints) ? { maxPoints: cfgMaxPoints } : {}),
+              ...(typeof cfgInfinite === 'boolean' ? { infinitePoints: cfgInfinite } : {}),
+              ...(typeof cfgMaintenanceEnabled === 'boolean' ? { maintenanceEnabled: cfgMaintenanceEnabled } : {}),
+              ...(cfgMaintenanceMessage ? { maintenanceMessage: cfgMaintenanceMessage } : {}),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
+      }
+
+      let nodeWrites = 0;
+      let bgWrites = 0;
+      let bgAdds = 0;
+
+      let batch = writeBatch(firestore);
+      let ops = 0;
+      const flush = async () => {
+        if (ops === 0) return;
+        await batch.commit();
+        batch = writeBatch(firestore);
+        ops = 0;
+      };
+
+      for (const n of nodesToImport) {
+        const id = typeof n?.id === 'string' || typeof n?.id === 'number' ? String(n.id).trim() : '';
+        if (!id) continue;
+        const grandNode = typeof n?.grandNode === 'boolean' ? n.grandNode : n?.grandNode === 'true';
+        const socketJewel = typeof n?.socketJewel === 'boolean' ? n.socketJewel : n?.socketJewel === 'true';
+        const blackHole = typeof n?.blackHole === 'boolean' ? n.blackHole : n?.blackHole === 'true';
+        const payload = {
+          ...(typeof n?.name === 'string' ? { name: n.name } : {}),
+          ...(typeof n?.description === 'string' ? { description: n.description } : {}),
+          ...(typeof n?.image === 'string' ? { image: n.image } : {}),
+          ...(typeof grandNode === 'boolean' ? { grandNode } : {}),
+          ...(typeof socketJewel === 'boolean' ? { socketJewel } : {}),
+          ...(typeof blackHole === 'boolean' ? { blackHole } : {}),
+          updatedAt: serverTimestamp(),
+        };
+        batch.set(doc(firestore, 'incarnation_tree_nodes', id), payload, { merge: true });
+        nodeWrites += 1;
+        ops += 1;
+        if (ops >= 400) await flush();
+      }
+      await flush();
+
+      for (const b of bgsToImport) {
+        const id = typeof b?.id === 'string' ? b.id.trim() : '';
+        const x = typeof b?.x === 'number' ? b.x : Number(b?.x);
+        const y = typeof b?.y === 'number' ? b.y : Number(b?.y);
+        const width = typeof b?.width === 'number' ? b.width : Number(b?.width);
+        const height = typeof b?.height === 'number' ? b.height : Number(b?.height);
+        const opacity = typeof b?.opacity === 'number' ? b.opacity : Number(b?.opacity);
+        const image = typeof b?.image === 'string' ? b.image : '';
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !image) continue;
+
+        const payload = {
+          ...(typeof b?.name === 'string' ? { name: b.name } : {}),
+          image,
+          x,
+          y,
+          ...(Number.isFinite(width) ? { width } : {}),
+          ...(Number.isFinite(height) ? { height } : {}),
+          ...(Number.isFinite(opacity) ? { opacity } : {}),
+          updatedAt: serverTimestamp(),
+        };
+
+        if (id) {
+          batch.set(doc(firestore, 'incarnation_backgrounds', id), payload, { merge: true });
+          bgWrites += 1;
+          ops += 1;
+          if (ops >= 400) await flush();
+        } else {
+          await addDoc(collection(firestore, 'incarnation_backgrounds'), { ...payload, createdAt: serverTimestamp() });
+          bgAdds += 1;
+        }
+      }
+      await flush();
+
+      setFlash({
+        type: 'ok',
+        text: `Importação concluída. Nodes: ${nodeWrites}. Fundos atualizados: ${bgWrites}. Fundos novos: ${bgAdds}.`,
+      });
+      setJsonModal(null);
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao importar JSON.' });
+    } finally {
+      setJsonBusy(false);
+    }
+  };
+
+  const cancelBgEdit = () => {
+    setEditingBgId(null);
+    setBgName('');
+    setBgX('');
+    setBgY('');
+    setBgW('150');
+    setBgH('150');
+    setBgUrl('');
+  };
+
+  const editBg = (bg: IncarnationBgRow) => {
+    setEditingBgId(bg.id);
+    setBgName(bg.name || '');
+    setBgX(String(bg.x));
+    setBgY(String(bg.y));
+    setBgW(String(bg.width || 150));
+    setBgH(String(bg.height || 150));
+    setBgUrl(bg.image || '');
+  };
+
+  const saveBg = async () => {
+    const x = Number(bgX);
+    const y = Number(bgY);
+    const w = Number(bgW) || 150;
+    const h = Number(bgH) || 150;
+    const image = bgUrl.trim();
+
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !image) {
+      setFlash({ type: 'error', text: 'Preencha X, Y e URL da imagem.' });
+      return;
+    }
+
+    setSavingBg(true);
+    setFlash(null);
+    try {
+      const payload = { name: bgName.trim(), x, y, image, width: w, height: h, opacity: 1, updatedAt: serverTimestamp() };
+      if (editingBgId) {
+        await setDoc(doc(firestore, 'incarnation_backgrounds', editingBgId), payload, { merge: true });
+        setFlash({ type: 'ok', text: 'Imagem de fundo atualizada.' });
+      } else {
+        await addDoc(collection(firestore, 'incarnation_backgrounds'), { ...payload, createdAt: serverTimestamp() });
+        setFlash({ type: 'ok', text: 'Imagem de fundo adicionada.' });
+      }
+      cancelBgEdit();
+    } catch {
+      setFlash({ type: 'error', text: 'Falha ao salvar imagem de fundo.' });
+    } finally {
+      setSavingBg(false);
+    }
+  };
+
+  const deleteBg = async (id: string) => {
+    try {
+      await deleteDoc(doc(firestore, 'incarnation_backgrounds', id));
+      setFlash({ type: 'ok', text: 'Imagem de fundo removida.' });
+    } catch {
+      setFlash({ type: 'error', text: 'Falha ao remover imagem de fundo.' });
+    } finally {
+      setConfirmDeleteBgId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
+        <div className="p-5 border-b border-brand-dark/10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="font-heading font-bold text-xl uppercase tracking-tight text-brand-darker">Incarnation Tree</div>
+              <div className="text-xs text-brand-darker/60">Configurações e cadastro das informações dos nodes.</div>
+            </div>
+            <div className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 w-full md:w-96">
+              <Search className="w-4 h-4 text-brand-darker/40" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar por id, nome, descrição..."
+                className="bg-transparent outline-none border-none text-sm w-full text-brand-darker placeholder:text-brand-darker/40"
+              />
+              <div className="text-[11px] font-bold text-brand-darker/40 whitespace-nowrap">
+                {loading ? '...' : `${filtered.length}/${nodes.length}`}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={openExportJson}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Exportar JSON
+            </button>
+            <button
+              type="button"
+              onClick={openImportJson}
+              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Importar JSON
+            </button>
+          </div>
+          {flash ? (
+            <div className={`mt-4 text-xs font-bold ${flash.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>{flash.text}</div>
+          ) : null}
+        </div>
+
+        <div className="p-5">
+          <div className="font-heading font-bold uppercase tracking-widest text-xs text-brand-darker/70">Configurações da Árvore</div>
+          <div className="mt-3 flex flex-col md:flex-row md:items-end gap-4">
+            <label className="block">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Máximo de Pontos</div>
+              <input
+                type="number"
+                value={maxPoints}
+                onChange={(e) => setMaxPoints(Number(e.target.value))}
+                disabled={configLoading || infinitePoints}
+                className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+              <input
+                type="checkbox"
+                checked={infinitePoints}
+                disabled={configLoading}
+                onChange={(e) => setInfinitePoints(e.target.checked)}
+                className="accent-brand-orange"
+              />
+              <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Pontos Infinitos</span>
+            </label>
+
+            <label className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+              <input
+                type="checkbox"
+                checked={maintenanceEnabled}
+                disabled={configLoading}
+                onChange={(e) => setMaintenanceEnabled(e.target.checked)}
+                className="accent-brand-orange"
+              />
+              <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Ocultar Tree (Maintenance)</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => void saveConfig()}
+              disabled={configLoading || savingConfig}
+              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              <Save className="w-4 h-4" />
+              {savingConfig ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Mensagem (inglês)</div>
+            <input
+              value={maintenanceMessage}
+              onChange={(e) => setMaintenanceMessage(e.target.value)}
+              disabled={configLoading}
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+              placeholder="Page is under maintenance. Please check back soon."
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
+        <div className="p-5 border-b border-brand-dark/10">
+          <div className="font-heading font-bold uppercase tracking-widest text-xs text-brand-darker/70">Imagens de Fundo (Decorativas)</div>
+          <div className="mt-1 text-xs text-brand-darker/60">Gerencia a coleção incarnation_backgrounds.</div>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+            <label className="md:col-span-2">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Nome (opcional)</div>
+              <input value={bgName} onChange={(e) => setBgName(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">X</div>
+              <input value={bgX} onChange={(e) => setBgX(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Y</div>
+              <input value={bgY} onChange={(e) => setBgY(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">W</div>
+              <input value={bgW} onChange={(e) => setBgW(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">H</div>
+              <input value={bgH} onChange={(e) => setBgH(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label className="md:col-span-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">URL da Imagem</div>
+              <input value={bgUrl} onChange={(e) => setBgUrl(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" placeholder="/images/incarnation/xxx.webp" />
+            </label>
+            <div className="md:col-span-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void saveBg()}
+                disabled={savingBg}
+                className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+              >
+                <Save className="w-4 h-4" />
+                {savingBg ? 'Salvando...' : editingBgId ? 'Atualizar' : 'Adicionar'}
+              </button>
+              {editingBgId ? (
+                <button
+                  type="button"
+                  onClick={cancelBgEdit}
+                  className="inline-flex items-center justify-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  Cancelar
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="max-h-72 overflow-auto rounded-xl border border-brand-dark/10">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-brand-dark/10">
+                <tr className="text-left">
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Preview</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Nome</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">X</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Y</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">W</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">H</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-28">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBg.map((bg, idx) => {
+                  const url = normalizeIncarnationImageUrl(bg.image);
+                  return (
+                    <tr key={bg.id} className={idx % 2 === 0 ? 'bg-brand-bg/40' : 'bg-white'}>
+                      <td className="px-3 py-2">{url ? <img src={url} alt={bg.name || bg.id} className="w-10 h-10 object-contain bg-black/80 rounded" /> : <span className="text-brand-darker/40">-</span>}</td>
+                      <td className="px-3 py-2 font-bold text-brand-darker">{bg.name || '-'}</td>
+                      <td className="px-3 py-2 font-mono text-brand-darker/70">{bg.x}</td>
+                      <td className="px-3 py-2 font-mono text-brand-darker/70">{bg.y}</td>
+                      <td className="px-3 py-2 font-mono text-brand-darker/70">{bg.width}</td>
+                      <td className="px-3 py-2 font-mono text-brand-darker/70">{bg.height}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => editBg(bg)}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker"
+                            title="Editar"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteBgId(bg.id)}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredBg.length === 0 && !bgLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-brand-darker/50 font-bold">
+                      Nenhuma imagem cadastrada.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
+        <div className="p-5 border-b border-brand-dark/10">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="font-heading font-bold uppercase tracking-widest text-xs text-brand-darker/70">Nodes</div>
+              <button
+                type="button"
+                onClick={openNewNode}
+                className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Nova Skill Info
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <label className="md:col-span-4">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Config Nodes (ID 1-1621)</div>
+                <select
+                  value={quickNodeId}
+                  onChange={(e) => setQuickNodeId(e.target.value)}
+                  className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+                >
+                  {nodeOptions.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="md:col-span-3">
+                <button
+                  type="button"
+                  onClick={openQuickNode}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+                >
+                  <Pencil className="w-4 h-4" />
+                  Configurar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5">
+          <div className="max-h-[55vh] overflow-auto rounded-xl border border-brand-dark/10">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white border-b border-brand-dark/10">
+                <tr className="text-left">
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-20">ID</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-16">Img</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Nome</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Descrição</th>
+                  <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-28">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nodeRows}
+                {filtered.length === 0 && !loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-brand-darker/50 font-bold">
+                      Nenhum node encontrado.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <Modal open={modalOpen} title={editingNodeId ? 'Editar Node' : 'Novo Node'} onClose={() => setModalOpen(false)}>
+        <div className="space-y-4">
+          <label className="block">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">ID do Node</div>
+            <input
+              value={formNodeId}
+              onChange={(e) => setFormNodeId(e.target.value)}
+              disabled={!!editingNodeId}
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-70"
+              placeholder="Ex: 12"
+            />
+          </label>
+
+          <label className="block">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Nome</div>
+            <input
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+            />
+          </label>
+
+          <label className="block">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Descrição</div>
+            <textarea
+              value={formDesc}
+              onChange={(e) => setFormDesc(e.target.value)}
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none min-h-48"
+            />
+          </label>
+
+          <label className="block">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Imagem (caminho ou URL)</div>
+            <input
+              value={formImage}
+              onChange={(e) => setFormImage(e.target.value)}
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+              placeholder="/images/incarnation/damien.webp"
+            />
+          </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+              <input type="checkbox" checked={formGrandNode} onChange={(e) => setFormGrandNode(e.target.checked)} className="accent-brand-orange" />
+              <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Grand Node</span>
+            </label>
+            <label className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+              <input type="checkbox" checked={formSocketJewel} onChange={(e) => setFormSocketJewel(e.target.checked)} className="accent-brand-orange" />
+              <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Socket Jewel</span>
+            </label>
+            <label className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+              <input type="checkbox" checked={formBlackHole} onChange={(e) => setFormBlackHole(e.target.checked)} className="accent-brand-orange" />
+              <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Black Hole</span>
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveNode()}
+              disabled={savingNode}
+              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              <Save className="w-4 h-4" />
+              {savingNode ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!confirmDeleteNodeId} title="Excluir Node" onClose={() => setConfirmDeleteNodeId(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">Deseja realmente excluir o node {confirmDeleteNodeId}?</div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteNodeId(null)}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void deleteNode(confirmDeleteNodeId || '')}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!confirmDeleteBgId} title="Excluir Imagem de Fundo" onClose={() => setConfirmDeleteBgId(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">Deseja realmente excluir a imagem de fundo?</div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDeleteBgId(null)}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void deleteBg(confirmDeleteBgId || '')}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={jsonModal === 'export'} title="Exportar Incarnation Tree" onClose={() => setJsonModal(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">Copie o JSON abaixo para backup ou para importar em outro projeto.</div>
+          <textarea className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-xs font-mono text-brand-darker outline-none min-h-72" value={jsonText} readOnly />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setJsonModal(null)}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => void copyJsonToClipboard()}
+              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
+            >
+              {jsonCopied ? 'Copiado' : 'Copiar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={jsonModal === 'import'} title="Importar Incarnation Tree" onClose={() => setJsonModal(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">Cole o JSON exportado do projeto original.</div>
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-xs font-mono text-brand-darker outline-none min-h-72"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setJsonModal(null)}
+              disabled={jsonBusy}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => void runImportJson()}
+              disabled={jsonBusy || !jsonText.trim()}
+              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {jsonBusy ? 'Importando...' : 'Importar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 type TeamMember = {
   id: string;
   nick: string;
@@ -927,13 +1926,13 @@ type TeamMember = {
 };
 
 const ROLES = [
-  { value: 'legendary admin-main', label: 'Desenvolvedor' },
-  { value: 'angelic', label: 'Moderador' },
-  { value: 'satanic', label: 'Colaborador' },
-  { value: 'heroic', label: 'Parceiro' },
+  { value: 'legendary admin-main', label: 'Developer' },
+  { value: 'angelic', label: 'Moderator' },
+  { value: 'satanic', label: 'Contributor' },
+  { value: 'heroic', label: 'Partner' },
   { value: 'set', label: 'Designer' },
   { value: 'mythic', label: 'Editor' },
-  { value: 'common', label: 'Suporte' },
+  { value: 'common', label: 'Support' },
 ];
 
 function AdminTeamPanel() {
@@ -1326,6 +2325,7 @@ export function AdminPage() {
                 <AdminSidebarLink href="/admin/users" label="Users" icon={<Users className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/settings" label="Settings" icon={<SlidersHorizontal className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/ether-tree" label="Ether Tree" icon={<Network className="w-5 h-5" />} />
+                <AdminSidebarLink href="/admin/incarnation-tree" label="Incarnation Tree" icon={<Network className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
@@ -1339,6 +2339,7 @@ export function AdminPage() {
               <Route path="users" element={<UsersTable />} />
               <Route path="settings" element={<AdminSettingsPanel />} />
               <Route path="ether-tree" element={<AdminEtherTreePanel />} />
+              <Route path="incarnation-tree" element={<AdminIncarnationTreePanel />} />
               <Route path="blog" element={<AdminBlogPanel />} />
               <Route path="team" element={<AdminTeamPanel />} />
               <Route path="contact" element={<AdminContactPanel />} />

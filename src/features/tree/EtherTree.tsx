@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Crosshair, Search, X } from 'lucide-react';
@@ -19,6 +19,22 @@ function getImageUrl(path: unknown) {
   }
   if (!path.startsWith('/')) return `/${path}`;
   return path;
+}
+
+function splitEffectParts(description: string) {
+  const out: string[] = [];
+  const lines = description.split(/\r?\n/);
+  for (const line of lines) {
+    const commaParts = line.split(/,\s*(?=[+-])/);
+    for (const part of commaParts) {
+      const semiParts = part.split(';');
+      for (const piece of semiParts) {
+        const trimmed = piece.trim();
+        if (trimmed) out.push(trimmed);
+      }
+    }
+  }
+  return out;
 }
 
 function compressNodes(activeSet: Set<number>, totalNodes: number) {
@@ -98,8 +114,6 @@ export function EtherTree() {
   const [infinitePoints, setInfinitePoints] = useState(false);
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('Page is under maintenance. Please check back soon.');
-  const [debugMode, setDebugMode] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
@@ -311,9 +325,8 @@ export function EtherTree() {
       const data = nodeData[String(nodeId)];
       if (!data || typeof data.description !== 'string' || !data.description) return;
 
-      const lines = data.description.split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
+      const parts = splitEffectParts(data.description);
+      for (const trimmed of parts) {
         if (!trimmed) continue;
 
         const matchNum = trimmed.match(/^([+-]?)\s*(\d+(?:[.,]\d+)?)(%?)\s+(.*)$/i);
@@ -364,6 +377,13 @@ export function EtherTree() {
     setTransform((prev) => ({ ...prev, k: prev.k * delta }));
   };
 
+  const handleCenterTree = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setTransform((prev) => ({ ...prev, x: rect.width / 2, y: rect.height / 2 }));
+  }, []);
+
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     isDragging.current = true;
@@ -372,8 +392,6 @@ export function EtherTree() {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (debugMode) setMousePos({ x: e.clientX, y: e.clientY });
-
     if (!isDragging.current) return;
     const dx = e.clientX - lastMousePos.current.x;
     const dy = e.clientY - lastMousePos.current.y;
@@ -489,8 +507,9 @@ export function EtherTree() {
               const node = (rawData as Array<{ name?: string; description?: string }>)[hoveredNode] || {};
               const dbData = nodeData[String(hoveredNode)] || {};
               const name = (typeof dbData.name === 'string' && dbData.name) || node.name || (hoveredNode === 0 ? 'Ether Core' : `Node ${hoveredNode}`);
-              const description =
+              const rawDescription =
                 (typeof dbData.description === 'string' && dbData.description) || node.description || 'No description available.';
+              const description = splitEffectParts(rawDescription).join('\n');
               const isActive = activeNodes.has(hoveredNode);
 
               return (
@@ -587,28 +606,16 @@ export function EtherTree() {
         </button>
         <button
           type="button"
-          onClick={() => setDebugMode((v) => !v)}
-          className={`px-3 py-1.5 rounded-full border transition text-xs font-bold uppercase tracking-wider ${debugMode ? 'bg-purple-500 text-white border-purple-500' : 'border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white'}`}
-          title="Enable debug mode to find coordinates"
+          onClick={handleCenterTree}
+          className="px-3 py-1.5 rounded-full border transition text-xs font-bold uppercase tracking-wider border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white"
+          title="Center the tree"
         >
           <span className="inline-flex items-center gap-1">
             <Crosshair className="w-4 h-4" />
-            {debugMode ? 'Debug ON' : 'Debug'}
+            Center Tree
           </span>
         </button>
       </div>
-
-      {debugMode ? (
-        <div className="absolute top-20 right-5 z-50 pointer-events-none bg-black/80 border border-purple-500 p-4 rounded text-xs font-mono text-purple-300">
-          <div className="mb-2 font-bold text-white border-b border-purple-500/50 pb-1">COORDINATES (Regarding the Center)</div>
-          <div>
-            X: <span className="text-white">{Math.round((mousePos.x - transform.x) / transform.k)}</span>
-          </div>
-          <div>
-            Y: <span className="text-white">{Math.round((mousePos.y - transform.y) / transform.k)}</span>
-          </div>
-        </div>
-      ) : null}
 
       {showResetModal ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -718,15 +725,6 @@ export function EtherTree() {
         ))}
 
         <svg className="absolute top-0 left-0 w-full h-full overflow-visible pointer-events-none">
-          <defs>
-            <filter id="ether-glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-              <feMerge>
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
           {(connections as Array<{ from: number; to: number }>).map((conn, idx) => {
             const n1 = (rawData as Array<{ x: number; y: number }>)[conn.from];
             const n2 = (rawData as Array<{ x: number; y: number }>)[conn.to];
@@ -744,12 +742,11 @@ export function EtherTree() {
                 x2={n2.x - (CENTER_ORIGIN as { x: number; y: number }).x}
                 y2={n2.y - (CENTER_ORIGIN as { x: number; y: number }).y}
                 stroke={isActive ? COLOR_ACTIVE : 'rgba(100, 100, 100, 0.3)'}
-                strokeWidth={isActive ? 3 : 2}
+                strokeWidth={isActive ? 2 : 1.5}
                 strokeLinecap="round"
                 style={{
-                  filter: isActive ? 'drop-shadow(0 0 3px #00f2ff)' : 'none',
                   transition: 'stroke 0.3s ease, stroke-width 0.3s ease',
-                  opacity: isActive ? 1 : 0.6,
+                  opacity: isActive ? 0.85 : 0.6,
                 }}
               />
             );
@@ -797,7 +794,7 @@ export function EtherTree() {
                 height: nodeSize,
                 transform: 'translate(-50%, -50%)',
                 backgroundColor: nodeImage ? 'transparent' : isCore ? COLOR_CORE : isActive ? COLOR_ACTIVE : COLOR_INACTIVE,
-                boxShadow: isMatch ? `0 0 20px ${COLOR_ACTIVE}, 0 0 40px ${COLOR_ACTIVE}` : isActive ? `0 0 10px ${isCore ? COLOR_CORE : COLOR_ACTIVE}` : 'none',
+                boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : isActive ? `0 0 1.5px ${isCore ? COLOR_CORE : COLOR_ACTIVE}` : 'none',
                 border: nodeImage ? 'none' : isActive ? '2px solid white' : `1px solid ${COLOR_ACTIVE}33`,
                 zIndex: isMatch ? 100 : isActive || isLeaf ? 10 : 1,
                 cursor: 'pointer',
@@ -814,7 +811,7 @@ export function EtherTree() {
                 <img
                   src={nodeImage}
                   alt="Node"
-                  className={`w-full h-full object-contain drop-shadow-md ${isActive ? 'brightness-125 saturate-150' : 'opacity-80 grayscale'}`}
+                  className={`w-full h-full object-contain drop-shadow-sm ${isActive ? 'brightness-110 saturate-125' : 'opacity-80 grayscale'}`}
                 />
               ) : null}
 
@@ -850,7 +847,8 @@ export function EtherTree() {
           const dbData = nodeData[String(hoveredNode)] || {};
           const name =
             (typeof dbData.name === 'string' && dbData.name) || node.name || (hoveredNode === 0 ? 'Ether Core' : `Node ${hoveredNode}`);
-          const description = (typeof dbData.description === 'string' && dbData.description) || node.description || 'No description';
+          const rawDescription = (typeof dbData.description === 'string' && dbData.description) || node.description || 'No description';
+          const description = splitEffectParts(rawDescription).join('\n');
 
           const screenX = (node.x - (CENTER_ORIGIN as { x: number; y: number }).x) * transform.k + transform.x;
           const screenY = (node.y - (CENTER_ORIGIN as { x: number; y: number }).y) * transform.k + transform.y;

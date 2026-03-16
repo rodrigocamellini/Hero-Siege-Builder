@@ -20,6 +20,7 @@ function isClassKey(v: unknown): v is ClassKey {
 
 export function Sidebar({ t }: { t: Translation }) {
   const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
+  const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -40,9 +41,126 @@ export function Sidebar({ t }: { t: Translation }) {
     void load();
   }, []);
 
+  useEffect(() => {
+    let stop = false;
+    const loadPlayers = async () => {
+      try {
+        const viaCustom = async () => {
+          const u =
+            ((import.meta as any)?.env?.VITE_STEAM_ENDPOINT_URL as string | undefined) ??
+            (typeof window !== 'undefined' ? ((window as any).STEAM_ENDPOINT_URL as string | undefined) : undefined);
+          if (!u) throw new Error('No custom endpoint');
+          const r = await fetch(u, { cache: 'no-store' });
+          if (!r.ok) throw new Error('Custom endpoint error');
+          return r.json();
+        };
+        const direct = async () => {
+          const r = await fetch('https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=269210', {
+            cache: 'no-store',
+            mode: 'cors',
+          });
+          if (!r.ok) throw new Error('Steam API error');
+          return r.json();
+        };
+        const viaProxy = async () => {
+          const url =
+            'https://cors.isomorphic-git.org/https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=269210';
+          const r = await fetch(url, { cache: 'no-store' });
+          if (!r.ok) throw new Error('Proxy API error');
+          return r.json();
+        };
+        const viaProxy2 = async () => {
+          const url =
+            'https://api.allorigins.win/raw?url=' +
+            encodeURIComponent('https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=269210');
+          const r = await fetch(url, { cache: 'no-store' });
+          if (!r.ok) throw new Error('Proxy2 API error');
+          return r.json();
+        };
+        const viaProxy3 = async () => {
+          const url =
+            'https://corsproxy.io/?' +
+            encodeURIComponent('https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=269210');
+          const r = await fetch(url, { cache: 'no-store' });
+          if (!r.ok) throw new Error('Proxy3 API error');
+          return r.json();
+        };
+
+        let j: any = null;
+        try {
+          j = await viaCustom();
+        } catch {
+          try {
+            j = await direct();
+          } catch {
+            try {
+              j = await viaProxy();
+            } catch {
+              try {
+                j = await viaProxy2();
+              } catch {
+                j = await viaProxy3();
+              }
+            }
+          }
+        }
+
+        if (!stop) {
+          const count =
+            j && typeof j.player_count === 'number'
+              ? j.player_count
+              : j && j.response && typeof j.response.player_count === 'number'
+                ? j.response.player_count
+                : null;
+          setSteamPlayers(count);
+        }
+      } catch {
+        if (!stop) setSteamPlayers(null);
+      }
+    };
+
+    void loadPlayers();
+    const id = window.setInterval(loadPlayers, 60 * 1000);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, []);
+
   return (
     <aside className="space-y-8">
       <SeasonCountdown t={t} />
+
+      <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
+        <div className="bg-brand-darker p-6 rounded-2xl border border-white/5 text-center relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-40 group-hover:opacity-70 transition-opacity"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <img
+                src="https://store.steampowered.com/favicon.ico"
+                alt="Steam"
+                className="w-4 h-4 opacity-80"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <h3 className="text-xs font-bold text-white/70 uppercase tracking-widest">Players Online</h3>
+              {steamPlayers !== null && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
+            </div>
+            <div className="flex items-baseline justify-center gap-3">
+              <span className="text-white/60">
+                <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="8" cy="7" r="3"></circle>
+                  <circle cx="16" cy="9" r="2.5"></circle>
+                  <path d="M2 20c0-3.5 3-6 6-6s6 2.5 6 6H2z"></path>
+                  <path d="M13 20c0-2.5 2-4.5 4.5-4.5S22 17.5 22 20h-9z"></path>
+                </svg>
+              </span>
+              <div className="text-5xl font-black text-white tracking-tight">{steamPlayers ?? '—'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight flex items-center justify-between">
@@ -65,14 +183,14 @@ export function Sidebar({ t }: { t: Translation }) {
 
               return (
                 <div key={p.classKey} className={`relative bg-brand-bg border ${podiumColor.border} rounded-2xl p-3`}>
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 flex items-center gap-1">
+                  <div className="flex items-start gap-2">
+                    <div className="w-7 flex items-center gap-1">
                       <div className="text-xs font-bold text-brand-dark/30 tabular-nums">{idx + 1}</div>
                       <Trophy className={`w-4 h-4 ${podiumColor.text}`} />
                     </div>
 
                     <div
-                      className={`relative w-10 h-10 bg-white/70 rounded-2xl border ${podiumColor.border} overflow-hidden flex items-center justify-center flex-shrink-0`}
+                      className={`relative w-9 h-9 bg-white/70 rounded-2xl border ${podiumColor.border} overflow-hidden flex items-center justify-center flex-shrink-0`}
                     >
                       <img
                         src={`/images/classes/${p.classKey}.webp`}
@@ -82,7 +200,7 @@ export function Sidebar({ t }: { t: Translation }) {
                     </div>
 
                     <div className="min-w-0">
-                      <div className="font-bold text-brand-darker leading-tight break-words">{classNames[p.classKey]}</div>
+                      <div className="font-bold text-brand-darker leading-tight truncate">{classNames[p.classKey]}</div>
                       <div className="mt-1 text-[10px] font-bold text-brand-dark/30 uppercase tracking-widest tabular-nums">{p.votes} votes</div>
                     </div>
                   </div>
@@ -135,6 +253,19 @@ export function Sidebar({ t }: { t: Translation }) {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="bg-gradient-to-br from-brand-orange to-brand-orange-dark p-8 text-center rounded-2xl shadow-sm">
+        <h3 className="text-2xl font-black text-white italic uppercase mb-2">Join the Fight</h3>
+        <p className="text-white/90 text-xs mb-6">Start your journey in Tarethiel today!</p>
+        <a
+          href="https://store.steampowered.com/app/269210/Hero_Siege/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block w-full bg-white text-brand-darker font-bold uppercase py-3 text-xs tracking-widest hover:bg-brand-bg transition-colors rounded-xl"
+        >
+          Buy on Steam
+        </a>
       </div>
     </aside>
   );

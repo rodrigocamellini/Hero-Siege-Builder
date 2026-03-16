@@ -23,13 +23,18 @@ type Member = {
 };
 
 const ROLE_LABEL: Record<string, string> = {
-  'legendary admin-main': 'Desenvolvedor',
-  angelic: 'Moderador',
-  satanic: 'Colaborador',
-  heroic: 'Parceiro',
+  'legendary admin-main': 'Developer',
+  angelic: 'Moderator',
+  satanic: 'Contributor',
+  heroic: 'Partner',
   set: 'Designer',
   mythic: 'Editor',
-  common: 'Suporte',
+  common: 'Support',
+  Desenvolvedor: 'Developer',
+  Moderador: 'Moderator',
+  Colaborador: 'Contributor',
+  Parceiro: 'Partner',
+  Suporte: 'Support',
 };
 
 export function TeamPage() {
@@ -118,7 +123,7 @@ export function TeamPage() {
               <div className="equipe-main-layout">
                 {developers.map((dev) => (
                   <div key={dev.id} className={`cyber-card ${dev.role || 'legendary admin-main'}`}>
-                    <span className="tier-label">— {ROLE_LABEL[dev.role ?? ''] ?? 'Desenvolvedor'}</span>
+                    <span className="tier-label">— {ROLE_LABEL[dev.role ?? ''] ?? 'Developer'}</span>
                     <div className="profile-header">
                       <div className="img-frame admin-img">
                         <img
@@ -145,7 +150,7 @@ export function TeamPage() {
                 <div className="colaboradores-grid">
                   {others.map((m) => (
                     <div key={m.id} className={`cyber-card ${m.role || 'common'}`}>
-                      <span className="tier-label">— {ROLE_LABEL[m.role ?? ''] ?? 'Membro'}</span>
+                      <span className="tier-label">— {ROLE_LABEL[m.role ?? ''] ?? 'Member'}</span>
                       <div className="profile-header">
                         <div className="img-frame">
                           <img

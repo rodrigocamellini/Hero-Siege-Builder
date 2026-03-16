@@ -40,7 +40,7 @@ export const translations = {
         image: 'https://picsum.photos/seed/hero-siege-ether/100/100',
       },
     ],
-    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Contact'],
+    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Team', 'Contact'],
     rights: 'Hero Siege Builder {{year}} © This website is not affiliated with Panic Art Studios. All assets and data belong to their respective owners.',
     classes: {
       viking: { name: 'Viking', desc: 'Robust warrior focused on physical damage and resistance.' },
@@ -91,7 +91,7 @@ export const translations = {
         image: 'https://picsum.photos/seed/hero-siege-ether/100/100',
       },
     ],
-    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Contact'],
+    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Equipe', 'Contact'],
     rights: 'Hero Siege Builder {{year}} © Este site não é afiliado à Panic Art Studios. Todos os recursos e dados pertencem aos seus respectivos proprietários.',
     classes: {
       viking: { name: 'Viking', desc: 'Guerreiro robusto focado em dano físico e resistência.' },
@@ -142,7 +142,7 @@ export const translations = {
         image: 'https://picsum.photos/seed/hero-siege-ether/100/100',
       },
     ],
-    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Contact'],
+    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Команда', 'Contact'],
     rights: 'Hero Siege Builder {{year}} © Этот сайт не связан с Panic Art Studios. Все ресурсы и данные принадлежат их соответствующим владельцам.',
     classes: {
       viking: { name: 'Викинг', desc: 'Могучий воин, ориентированный на физический урон и сопротивление.' },

@@ -57,6 +57,64 @@
   image-rendering: crisp-edges;
 }
 
+.class-wiki table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.class-wiki th,
+.class-wiki td {
+  border: 1px solid rgba(45, 45, 45, 0.12);
+  padding: 8px 10px;
+  vertical-align: top;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.class-wiki th {
+  background: rgba(242, 125, 38, 0.08);
+  color: #1A1A1A;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+.class-wiki img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.class-wiki a {
+  color: #1A1A1A;
+  text-decoration: underline;
+}
+
+.class-wiki a:hover {
+  color: #F27D26;
+}
+
+.class-wiki a[data-class-key] {
+  cursor: pointer;
+  font-weight: 800;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.class-wiki ul,
+.class-wiki ol {
+  padding-left: 1.25rem;
+  margin: 0.75rem 0;
+}
+
+.class-wiki p {
+  margin: 0.75rem 0;
+}
+
 .hero-gradient {
   background: radial-gradient(circle at 70% 30%, #4a4a4a 0%, #1a1a1a 100%);
 }

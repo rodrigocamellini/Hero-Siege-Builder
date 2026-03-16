@@ -217,14 +217,14 @@ export function BlogPostPage() {
         const snap = await getDoc(doc(firestore, 'blogPosts', id));
         if (!snap.exists()) {
           setPost(null);
-          setError('Post não encontrado.');
+          setError('Post not found.');
           return;
         }
         const data = snap.data() as any;
         const status: 'DRAFT' | 'PUBLISHED' = data?.status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT';
         if (status !== 'PUBLISHED' && !canPreviewDrafts) {
           setPost(null);
-          setError('Post não encontrado.');
+          setError('Post not found.');
           return;
         }
         setPost({
@@ -243,7 +243,7 @@ export function BlogPostPage() {
           updatedAt: (data?.updatedAt as Timestamp) ?? null,
         });
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Falha ao carregar o post.');
+        setError(e instanceof Error ? e.message : 'Failed to load post.');
       } finally {
         setLoading(false);
       }
@@ -291,7 +291,7 @@ export function BlogPostPage() {
           id: d.id,
           text: safeString(data?.text),
           authorUid: safeString(data?.authorUid),
-          authorNick: safeString(data?.authorNick) || 'Usuário',
+          authorNick: safeString(data?.authorNick) || 'User',
           authorPhotoURL: safeString(data?.authorPhotoURL) || null,
           createdAt: (data?.createdAt as Timestamp) ?? null,
         } satisfies CommentRow;
@@ -304,7 +304,7 @@ export function BlogPostPage() {
       });
       setComments(filtered);
     } catch (e) {
-      setCommentsError(e instanceof Error ? e.message : 'Falha ao carregar comentários.');
+      setCommentsError(e instanceof Error ? e.message : 'Failed to load comments.');
       setComments([]);
     } finally {
       setCommentsLoading(false);
@@ -343,7 +343,7 @@ export function BlogPostPage() {
     setCommentSentOk(false);
     setCommentSending(true);
     try {
-      const authorNick = (profile?.nick ?? profile?.displayName ?? user.displayName ?? user.email ?? 'Usuário').trim();
+      const authorNick = (profile?.nick ?? profile?.displayName ?? user.displayName ?? user.email ?? 'User').trim();
       const authorPhotoURL = (profile?.photoURL ?? user.photoURL ?? '').trim() || null;
       await addDoc(collection(firestore, 'blogPosts', post.id, 'comments'), {
         text,
@@ -377,7 +377,7 @@ export function BlogPostPage() {
       await batch.commit();
       navigate('/blog');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Falha ao excluir o post.');
+      setError(e instanceof Error ? e.message : 'Failed to delete post.');
     } finally {
       setDeletingPost(false);
       setDeletePostOpen(false);
@@ -393,7 +393,7 @@ export function BlogPostPage() {
       await deleteDoc(doc(firestore, 'blogPosts', post.id, 'comments', commentId));
       setComments((prev) => prev.filter((c) => c.id !== commentId));
     } catch (e) {
-      setCommentsError(e instanceof Error ? e.message : 'Falha ao excluir o comentário.');
+      setCommentsError(e instanceof Error ? e.message : 'Failed to delete comment.');
     } finally {
       setDeletingComment(false);
       setDeleteCommentId(null);
@@ -407,10 +407,10 @@ export function BlogPostPage() {
     <StandardPage>
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-16">
         <Link to="/blog" className="text-xs font-bold uppercase tracking-widest text-brand-darker/60 hover:text-brand-orange">
-          Voltar
+          Back
         </Link>
 
-        {loading ? <div className="mt-6 text-sm text-brand-darker/60">Carregando...</div> : null}
+        {loading ? <div className="mt-6 text-sm text-brand-darker/60">Loading...</div> : null}
         {error ? <div className="mt-6 text-sm font-bold text-red-600">{error}</div> : null}
 
         {!loading && post ? (
@@ -428,8 +428,8 @@ export function BlogPostPage() {
                     type="button"
                     onClick={() => setDeletePostOpen(true)}
                     className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600"
-                    title="Excluir post"
-                    aria-label="Excluir post"
+                    title="Delete post"
+                    aria-label="Delete post"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>
@@ -452,22 +452,22 @@ export function BlogPostPage() {
 
               <div className="mt-5 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center text-xs font-bold text-brand-darker/60">
-                  {post.authorPhotoURL ? <img src={post.authorPhotoURL} alt={post.authorNick ?? 'Autor'} className="w-full h-full object-cover" /> : '—'}
+                  {post.authorPhotoURL ? <img src={post.authorPhotoURL} alt={post.authorNick ?? 'Author'} className="w-full h-full object-cover" /> : '—'}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Autor</div>
+                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Author</div>
                   <div className="text-sm font-bold text-brand-darker truncate">{post.authorNick ?? '—'}</div>
                 </div>
               </div>
 
               <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-brand-dark/10 rounded-2xl bg-brand-bg/40 p-4">
                 <div className="min-w-0">
-                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Avaliação</div>
+                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Rating</div>
                   <div className="mt-1 text-sm text-brand-darker">
-                    {ratingCount ? `${ratingAvg.toFixed(1)} / 5` : 'Sem avaliações ainda'}
+                    {ratingCount ? `${ratingAvg.toFixed(1)} / 5` : 'No ratings yet'}
                     {ratingCount ? <span className="text-brand-darker/60">{` · ${ratingCount}`}</span> : null}
                   </div>
-                  {myRating ? <div className="mt-1 text-xs text-brand-darker/60">{`Sua nota: ${myRating}/5`}</div> : null}
+                  {myRating ? <div className="mt-1 text-xs text-brand-darker/60">{`Your rating: ${myRating}/5`}</div> : null}
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -483,8 +483,8 @@ export function BlogPostPage() {
                           onMouseLeave={() => setHoverRating(null)}
                           onClick={() => void rate(v)}
                           className={`p-1 rounded-lg transition-colors ${!user ? 'opacity-60 cursor-not-allowed' : 'hover:bg-white/60'}`}
-                          title={!user ? 'Faça login para avaliar' : `Dar ${v} estrelas`}
-                          aria-label={`Dar ${v} estrelas`}
+                          title={!user ? 'Log in to rate' : `Rate ${v} stars`}
+                          aria-label={`Rate ${v} stars`}
                         >
                           <Star className={`w-6 h-6 ${active ? 'text-brand-orange' : 'text-brand-darker/40'}`} fill={active ? 'currentColor' : 'none'} />
                         </button>
@@ -497,7 +497,7 @@ export function BlogPostPage() {
                       to={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
                       className="text-[10px] font-bold uppercase tracking-widest text-brand-orange hover:text-brand-darker"
                     >
-                      Entrar
+                      Log in
                     </Link>
                   ) : null}
 
@@ -512,8 +512,8 @@ export function BlogPostPage() {
 
               {post.videoUrls.length ? (
                 <div className="mt-10 border-t border-brand-dark/10 pt-8">
-                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Mídia</div>
-                  <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Vídeos</div>
+                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Media</div>
+                  <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Videos</div>
                   <div className="mt-6 space-y-4">
                     {post.videoUrls.map((u) => {
                       const embed = youtubeEmbedUrl(u);
@@ -524,7 +524,7 @@ export function BlogPostPage() {
                               <iframe
                                 className="w-full h-full"
                                 src={embed}
-                                title="Vídeo"
+                                title="Video"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                                 allowFullScreen
                               />
@@ -546,10 +546,10 @@ export function BlogPostPage() {
               <div className="mt-10 border-t border-brand-dark/10 pt-8">
                 <div className="flex items-end justify-between gap-4">
                   <div>
-                    <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Discussão</div>
-                    <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Comentários</div>
+                    <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Discussion</div>
+                    <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Comments</div>
                   </div>
-                  {commentsLoading ? <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">Carregando...</div> : null}
+                  {commentsLoading ? <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">Loading...</div> : null}
                 </div>
 
                 {commentsError ? <div className="mt-4 text-xs font-bold text-red-600">{commentsError}</div> : null}
@@ -572,8 +572,8 @@ export function BlogPostPage() {
                             type="button"
                             onClick={() => setDeleteCommentId(c.id)}
                             className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600"
-                            title="Excluir comentário"
-                            aria-label="Excluir comentário"
+                            title="Delete comment"
+                            aria-label="Delete comment"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -582,18 +582,18 @@ export function BlogPostPage() {
                       <div className="mt-3 text-sm text-brand-darker/80 whitespace-pre-wrap">{c.text}</div>
                     </div>
                   ))}
-                  {!commentsLoading && comments.length === 0 ? <div className="text-sm text-brand-darker/60">Ainda não há comentários.</div> : null}
+                  {!commentsLoading && comments.length === 0 ? <div className="text-sm text-brand-darker/60">No comments yet.</div> : null}
                 </div>
 
                 <div className="mt-8 bg-white border border-brand-dark/10 rounded-2xl p-5">
                   <div className="flex items-center justify-between gap-4">
-                    <div className="font-heading font-bold uppercase tracking-tight text-brand-darker">Deixe um comentário</div>
+                    <div className="font-heading font-bold uppercase tracking-tight text-brand-darker">Leave a comment</div>
                     {!user ? (
                       <Link
                         to={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
                         className="text-[10px] font-bold uppercase tracking-widest text-brand-orange hover:text-brand-darker"
                       >
-                        Entrar
+                        Log in
                       </Link>
                     ) : null}
                   </div>
@@ -601,7 +601,7 @@ export function BlogPostPage() {
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     disabled={!user || commentSending}
-                    placeholder={!user ? 'Faça login para comentar.' : 'Escreva seu comentário (vai para aprovação).'}
+                    placeholder={!user ? 'Log in to comment.' : 'Write your comment (pending approval).'}
                     className="mt-4 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-4 py-3 text-sm text-brand-darker outline-none min-h-[110px] disabled:opacity-60"
                   />
                   <div className="mt-3 flex items-center justify-between gap-3">
@@ -612,10 +612,10 @@ export function BlogPostPage() {
                       disabled={!user || commentSending || commentText.trim().length < 2 || commentText.trim().length > 800}
                       className="inline-flex items-center justify-center bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
                     >
-                      {commentSending ? 'Enviando...' : 'Enviar (aprovação)'}
+                      {commentSending ? 'Sending...' : 'Send (approval)'}
                     </button>
                   </div>
-                  {commentSentOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Comentário enviado para aprovação.</div> : null}
+                  {commentSentOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Comment sent for approval.</div> : null}
                 </div>
               </div>
             </div>
@@ -625,14 +625,14 @@ export function BlogPostPage() {
 
       <Modal
         open={deletePostOpen}
-        title="Excluir Post"
+        title="Delete Post"
         onClose={() => {
           if (deletingPost) return;
           setDeletePostOpen(false);
         }}
       >
         <div className="space-y-4">
-          <div className="text-sm text-brand-darker/80">Tem certeza que deseja excluir esta postagem? Essa ação não pode ser desfeita.</div>
+          <div className="text-sm text-brand-darker/80">Are you sure you want to delete this post? This action cannot be undone.</div>
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -640,7 +640,7 @@ export function BlogPostPage() {
               disabled={deletingPost}
               className="inline-flex items-center justify-center bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
             >
-              Cancelar
+              Cancel
             </button>
             <button
               type="button"
@@ -648,7 +648,7 @@ export function BlogPostPage() {
               disabled={deletingPost}
               className="inline-flex items-center justify-center bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-60"
             >
-              {deletingPost ? 'Excluindo...' : 'Excluir'}
+              {deletingPost ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>
@@ -656,14 +656,14 @@ export function BlogPostPage() {
 
       <Modal
         open={!!deleteCommentId}
-        title="Excluir Comentário"
+        title="Delete Comment"
         onClose={() => {
           if (deletingComment) return;
           setDeleteCommentId(null);
         }}
       >
         <div className="space-y-4">
-          <div className="text-sm text-brand-darker/80">Tem certeza que deseja excluir este comentário?</div>
+          <div className="text-sm text-brand-darker/80">Are you sure you want to delete this comment?</div>
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -671,7 +671,7 @@ export function BlogPostPage() {
               disabled={deletingComment}
               className="inline-flex items-center justify-center bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
             >
-              Cancelar
+              Cancel
             </button>
             <button
               type="button"
@@ -679,7 +679,7 @@ export function BlogPostPage() {
               disabled={deletingComment}
               className="inline-flex items-center justify-center bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-60"
             >
-              {deletingComment ? 'Excluindo...' : 'Excluir'}
+              {deletingComment ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>

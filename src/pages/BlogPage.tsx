@@ -70,7 +70,7 @@ export function BlogPage() {
         });
         setItems(next);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Falha ao carregar o blog.');
+        setError(e instanceof Error ? e.message : 'Failed to load blog.');
       } finally {
         setLoading(false);
       }
@@ -140,7 +140,7 @@ export function BlogPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar post..."
+                placeholder="Search posts..."
                 className="w-full bg-white border border-brand-dark/10 rounded-xl px-4 py-3 text-sm text-brand-darker outline-none focus:border-brand-orange"
               />
             </div>
@@ -149,7 +149,7 @@ export function BlogPage() {
           {error ? <div className="mt-6 text-xs font-bold text-red-600">{error}</div> : null}
 
           {loading ? (
-            <div className="mt-8 text-sm text-brand-darker/60">Carregando...</div>
+            <div className="mt-8 text-sm text-brand-darker/60">Loading...</div>
           ) : (
             <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-5">
               {filtered.map((p) => (
@@ -167,7 +167,7 @@ export function BlogPage() {
                   </div>
                 </Link>
               ))}
-              {filtered.length === 0 ? <div className="text-sm text-brand-darker/60">Nenhum post encontrado.</div> : null}
+              {filtered.length === 0 ? <div className="text-sm text-brand-darker/60">No posts found.</div> : null}
             </div>
           )}
         </div>
@@ -177,13 +177,13 @@ export function BlogPage() {
             <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
               <div className="p-5">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/60">Editor</div>
-                <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Criar postagem</div>
+                <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Create post</div>
                 <div className="mt-3">
                   <Link
                     className="inline-flex items-center justify-center w-full bg-brand-dark text-white px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
                     to="/blog/editor"
                   >
-                    Abrir editor
+                    Open editor
                   </Link>
                 </div>
               </div>
@@ -192,8 +192,8 @@ export function BlogPage() {
 
           <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
             <div className="p-5 border-b border-brand-dark/10">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/60">Últimas</div>
-              <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Últimas postagens</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/60">Latest</div>
+              <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Latest posts</div>
             </div>
             <div className="p-2">
               {latest.map((p) => (
@@ -211,14 +211,14 @@ export function BlogPage() {
                   </div>
                 </Link>
               ))}
-              {!loading && latest.length === 0 ? <div className="px-3 py-4 text-xs text-brand-darker/60">Sem posts publicados.</div> : null}
+              {!loading && latest.length === 0 ? <div className="px-3 py-4 text-xs text-brand-darker/60">No published posts.</div> : null}
             </div>
           </div>
 
           <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
             <div className="p-5 border-b border-brand-dark/10">
               <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/60">Ranking</div>
-              <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Mais avaliadas</div>
+              <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Top rated</div>
             </div>
             <div className="p-2">
               {topRated.map((p) => (
@@ -245,8 +245,8 @@ export function BlogPage() {
                   </div>
                 </Link>
               ))}
-              {topRatedLoading ? <div className="px-3 py-4 text-xs text-brand-darker/60">Carregando...</div> : null}
-              {!topRatedLoading && !loading && topRated.length === 0 ? <div className="px-3 py-4 text-xs text-brand-darker/60">Sem avaliações ainda.</div> : null}
+              {topRatedLoading ? <div className="px-3 py-4 text-xs text-brand-darker/60">Loading...</div> : null}
+              {!topRatedLoading && !loading && topRated.length === 0 ? <div className="px-3 py-4 text-xs text-brand-darker/60">No ratings yet.</div> : null}
             </div>
           </div>
         </aside>

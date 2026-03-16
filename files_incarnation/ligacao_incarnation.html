@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>HSB Tree Builder - Pontos Ampliados</title>
+    <style>
+        body { background: #050505; color: #fff; font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        .header { height: 65px; padding: 0 20px; background: #111; border-bottom: 2px solid #f59e0b; display: flex; align-items: center; gap: 12px; z-index: 10; box-sizing: border-box; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        canvas { flex-grow: 1; background: #000; cursor: crosshair; display: block; }
+        .btn { background: #2d2d2d; color: #fff; border: 1px solid #444; padding: 10px 15px; cursor: pointer; border-radius: 4px; font-weight: bold; font-size: 11px; text-transform: uppercase; transition: 0.2s; }
+        .btn:hover { background: #444; border-color: #f59e0b; }
+        .btn-save { background: #2563eb !important; border-color: #3b82f6 !important; margin-left: 10px; }
+        .status { margin-left: auto; font-family: monospace; color: #f59e0b; font-size: 14px; background: #1a1a1a; padding: 6px 12px; border-radius: 4px; border: 1px solid #333; }
+        .hint-box { position: absolute; bottom: 25px; right: 25px; background: rgba(10, 10, 10, 0.95); padding: 15px; border-radius: 8px; font-size: 12px; border: 1px solid #f59e0b; color: #ccc; pointer-events: none; line-height: 1.6; }
+        b { color: #f59e0b; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <button class="btn" style="border-left: 4px solid #d97706" onclick="document.getElementById('jsonInput').click()">1. Pontos</button>
+    <button class="btn" style="border-left: 4px solid #8b5cf6" onclick="document.getElementById('importLinksInput').click()">2. Progresso</button>
+    <button class="btn" style="border-left: 4px solid #059669" onclick="document.getElementById('imgInput').click()">3. Guia (IMG)</button>
+    <button class="btn btn-save" onclick="exportData()">4. Salvar Projeto</button>
+    
+    <input type="file" id="jsonInput" style="display:none" accept=".json">
+    <input type="file" id="importLinksInput" style="display:none" accept=".json">
+    <input type="file" id="imgInput" style="display:none" accept="image/*">
+    
+    <div class="status" id="status">HSB BUILDER ATIVO</div>
+</div>
+
+<div class="hint-box">
+    <b>CONTROLES:</b><br>
+    • <b>Mover Câmera:</b> Arraste com Botão Esquerdo.<br>
+    • <b>Mover Imagem:</b> Segure <b>SHIFT</b> + Arraste.<br>
+    • <b>Linkar:</b> Clique em dois pontos.<br>
+    • <b>Zoom:</b> Scroll do Mouse.
+</div>
+
+<canvas id="editorCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('editorCanvas');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    let points = [], connections = [], selectedPoint = null;
+    let camX = window.innerWidth / 2, camY = window.innerHeight / 2, zoom = 1.0;
+    let centerX = 0, centerY = 0;
+
+    let guideImg = new Image();
+    let imgLoaded = false;
+    let imgOffsetX = 0; 
+    let imgOffsetY = 0; 
+
+    let isMouseDown = false, isDragging = false, lastMousePos = { x: 0, y: 0 };
+    let isShiftDown = false;
+
+    window.addEventListener('keydown', e => { if(e.key === "Shift") isShiftDown = true; });
+    window.addEventListener('keyup', e => { if(e.key === "Shift") isShiftDown = false; });
+
+    function parseData(obj) {
+        if (obj.datasetColl && obj.datasetColl[0].data) return obj.datasetColl[0].data;
+        if (Array.isArray(obj)) return obj;
+        if (obj.data && Array.isArray(obj.data)) return obj.data;
+        return null;
+    }
+
+    document.getElementById('jsonInput').onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const content = JSON.parse(ev.target.result);
+                const rawPoints = parseData(content);
+                if (rawPoints) {
+                    points = rawPoints.map((p, i) => ({ x: parseFloat(p.x), y: parseFloat(p.y), id: p.id !== undefined ? p.id : i }));
+                    centerX = points.reduce((s, p) => s + p.x, 0) / points.length;
+                    centerY = points.reduce((s, p) => s + p.y, 0) / points.length;
+                    camX = (window.innerWidth / 2) - (centerX * zoom);
+                    camY = (window.innerHeight / 2) - (centerY * zoom);
+                    draw();
+                }
+            } catch(e) { alert("Erro ao carregar JSON."); }
+        };
+        reader.readAsText(file);
+    };
+
+    document.getElementById('importLinksInput').onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const content = JSON.parse(ev.target.result);
+                if (content.connections) { connections = content.connections; draw(); }
+            } catch(e) { alert("Erro ao carregar progresso."); }
+        };
+        reader.readAsText(file);
+    };
+
+    document.getElementById('imgInput').onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            guideImg.onload = () => { imgLoaded = true; draw(); };
+            guideImg.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const mX = e.clientX, mY = e.clientY - 65;
+        const wheel = e.deltaY < 0 ? 1.1 : 0.9;
+        const worldX = (mX - camX) / zoom;
+        const worldY = (mY - camY) / zoom;
+        zoom = Math.min(Math.max(zoom * wheel, 0.002), 50);
+        camX = mX - worldX * zoom;
+        camY = mY - worldY * zoom;
+        draw();
+    }, { passive: false });
+
+    canvas.onmousedown = e => {
+        if (e.button === 0) {
+            isMouseDown = true;
+            isDragging = false;
+            lastMousePos = { x: e.clientX, y: e.clientY };
+        }
+    };
+
+    window.onmousemove = e => {
+        if (isMouseDown) {
+            isDragging = true;
+            const dx = e.clientX - lastMousePos.x;
+            const dy = e.clientY - lastMousePos.y;
+            if (isShiftDown) {
+                imgOffsetX += dx / zoom;
+                imgOffsetY += dy / zoom;
+            } else {
+                camX += dx;
+                camY += dy;
+            }
+            lastMousePos = { x: e.clientX, y: e.clientY };
+            draw();
+        }
+    };
+
+    window.onmouseup = e => {
+        if (e.button === 0 && isMouseDown && !isDragging && !isShiftDown) {
+            const mX = e.clientX, mY = e.clientY - 65;
+            const target = getPointAt(mX, mY);
+            if (target) {
+                if (selectedPoint && selectedPoint.id === target.id) selectedPoint = null;
+                else if (!selectedPoint) selectedPoint = target;
+                else {
+                    const idx = connections.findIndex(c => (c.from === selectedPoint.id && c.to === target.id) || (c.from === target.id && c.to === selectedPoint.id));
+                    if (idx !== -1) connections.splice(idx, 1);
+                    else {
+                        const dS = Math.hypot(selectedPoint.x - centerX, selectedPoint.y - centerY);
+                        const dE = Math.hypot(target.x - centerX, target.y - centerY);
+                        connections.push({ from: selectedPoint.id, to: target.id, inverted: dE < dS });
+                    }
+                    selectedPoint = null;
+                }
+            } else selectedPoint = null;
+        }
+        isMouseDown = isDragging = false;
+        draw();
+    };
+
+    function getPointAt(mX, mY) {
+        let closest = null, minDist = 30; // Margem de clique aumentada
+        points.forEach(p => {
+            const d = Math.hypot((p.x * zoom + camX) - mX, (p.y * zoom + camY) - mY);
+            if (d < minDist) { closest = p; minDist = d; }
+        });
+        return closest;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        if (imgLoaded) {
+            ctx.globalAlpha = 0.35;
+            const iw = guideImg.width * zoom, ih = guideImg.height * zoom;
+            ctx.drawImage(guideImg, camX + (imgOffsetX - guideImg.width/2) * zoom, camY + (imgOffsetY - guideImg.height/2) * zoom, iw, ih);
+            ctx.globalAlpha = 1.0;
+        }
+
+        // Links
+        connections.forEach(c => {
+            const p1 = points.find(p => p.id === c.from), p2 = points.find(p => p.id === c.to);
+            if (p1 && p2) {
+                ctx.beginPath();
+                ctx.moveTo(p1.x * zoom + camX, p1.y * zoom + camY);
+                ctx.lineTo(p2.x * zoom + camX, p2.y * zoom + camY);
+                ctx.strokeStyle = c.inverted ? "#ff4444" : "#f59e0b";
+                ctx.lineWidth = 3 * Math.max(0.3, zoom/2);
+                ctx.stroke();
+            }
+        });
+
+        // Pontos - TAMANHO DOBRADO
+        points.forEach(p => {
+            const sx = p.x * zoom + camX, sy = p.y * zoom + camY;
+            const isSel = selectedPoint && selectedPoint.id === p.id;
+            
+            // Raio base de 8 em vez de 4
+            const radius = (isSel ? 16 : 8) * Math.max(0.4, zoom/2);
+            
+            ctx.beginPath();
+            ctx.arc(sx, sy, radius, 0, Math.PI*2);
+            ctx.fillStyle = isSel ? "#fff" : "#777";
+            
+            if (isSel) {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = "#fff";
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Borda leve para destacar
+            ctx.strokeStyle = "rgba(0,0,0,0.5)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        });
+        
+        status.innerText = `NÓS: ${points.length} | LINKS: ${connections.length}`;
+    }
+
+    function exportData() {
+        const data = JSON.stringify({ connections }, null, 2);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([data], {type: 'application/json'}));
+        a.download = 'hsb_links_save.json';
+        a.click();
+    }
+
+    window.onresize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight - 65; draw(); };
+    window.onresize();
+    canvas.oncontextmenu = e => e.preventDefault();
+</script>
+</body>
+</html>

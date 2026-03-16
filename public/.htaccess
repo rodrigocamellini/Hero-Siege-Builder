@@ -1,6 +1,8 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+  RewriteCond %{HTTP_HOST} ^herosiegebuilder\.com$ [NC]
+  RewriteRule ^ https://www.herosiegebuilder.com%{REQUEST_URI} [L,R=301,NE]
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d

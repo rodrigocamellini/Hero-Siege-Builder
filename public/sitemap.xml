@@ -4,7 +4,25 @@
     <loc>https://www.herosiegebuilder.com/</loc>
   </url>
   <url>
+    <loc>https://www.herosiegebuilder.com/account/settings</loc>
+  </url>
+  <url>
     <loc>https://www.herosiegebuilder.com/blog</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/blog/act-ix-teaser-whats-to-come-for-hero-siege-in-the-near-future</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/blog/editor</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/blog/new-class-the-prophet</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/blog/new-tree-incarnations-ether</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/blog/season-9-starts-april-3</loc>
   </url>
   <url>
     <loc>https://www.herosiegebuilder.com/contact</loc>
@@ -13,10 +31,52 @@
     <loc>https://www.herosiegebuilder.com/database</loc>
   </url>
   <url>
+    <loc>https://www.herosiegebuilder.com/database/augments</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/chaos-tower</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/charms</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/chaves</loc>
+  </url>
+  <url>
     <loc>https://www.herosiegebuilder.com/database/classes</loc>
   </url>
   <url>
+    <loc>https://www.herosiegebuilder.com/database/gems</loc>
+  </url>
+  <url>
     <loc>https://www.herosiegebuilder.com/database/items</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/mercenarios</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/mineracao</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/quests</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/relics</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/database/runes</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/ether-tree</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/incarnation-tree</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/settings</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/team</loc>
   </url>
   <url>
     <loc>https://www.herosiegebuilder.com/tierlist</loc>
@@ -29,5 +89,8 @@
   </url>
   <url>
     <loc>https://www.herosiegebuilder.com/tree/incarnation</loc>
+  </url>
+  <url>
+    <loc>https://www.herosiegebuilder.com/users</loc>
   </url>
 </urlset>

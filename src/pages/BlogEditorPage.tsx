@@ -23,10 +23,10 @@ type BlogPostRow = {
 function firestoreErrorMessage(err: unknown) {
   if (err instanceof Error && err.message) return err.message;
   const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
-  if (code === 'permission-denied') return 'Permissão negada no Firestore.';
-  if (code === 'unauthenticated') return 'Você precisa estar logado.';
-  if (code === 'unavailable') return 'Firestore indisponível. Tente novamente.';
-  return code ? `Erro: ${code}` : 'Falha no Firestore.';
+  if (code === 'permission-denied') return 'Firestore permission denied.';
+  if (code === 'unauthenticated') return 'You need to be logged in.';
+  if (code === 'unavailable') return 'Firestore unavailable. Please try again.';
+  return code ? `Error: ${code}` : 'Firestore error.';
 }
 
 function slugify(input: string) {
@@ -185,7 +185,7 @@ export function BlogEditorPage() {
     try {
       const snap = await getDoc(doc(firestore, 'blogPosts', id));
       if (!snap.exists()) {
-        setError('Post não encontrado.');
+        setError('Post not found.');
         setModalOpen(false);
         return;
       }
@@ -193,7 +193,7 @@ export function BlogEditorPage() {
       const authorUid = safeString(data?.authorUid) || null;
       const status: 'DRAFT' | 'PUBLISHED' = data?.status === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT';
       if (!isAdmin && (!user || authorUid !== user.uid || status !== 'DRAFT')) {
-        setError('Você só pode editar seus próprios rascunhos. Publicações passam por aprovação no painel.');
+        setError('You can only edit your own drafts. Published posts require approval in the admin panel.');
         setModalOpen(false);
         return;
       }
@@ -223,7 +223,7 @@ export function BlogEditorPage() {
     setError(null);
     const title = form.title.trim();
     if (!title) {
-      setError('Título é obrigatório.');
+      setError('Title is required.');
       return;
     }
 
@@ -242,7 +242,7 @@ export function BlogEditorPage() {
         }
       }
       const nextStatus: 'DRAFT' = 'DRAFT';
-      const authorNick = (profile.nick ?? profile.displayName ?? user.displayName ?? user.email ?? 'Usuário').trim();
+      const authorNick = (profile.nick ?? profile.displayName ?? user.displayName ?? user.email ?? 'User').trim();
       const authorPhotoURL = (profile.photoURL ?? user.photoURL ?? '').trim() || null;
       const base = {
         title,
@@ -318,7 +318,7 @@ export function BlogEditorPage() {
       <StandardPage>
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
           <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Blog Editor</h1>
-          <p className="mt-2 text-sm text-brand-darker/60">Carregando permissões...</p>
+          <p className="mt-2 text-sm text-brand-darker/60">Loading permissions...</p>
         </div>
       </StandardPage>
     );
@@ -329,10 +329,10 @@ export function BlogEditorPage() {
       <StandardPage>
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
           <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Blog Editor</h1>
-          <p className="mt-2 text-sm text-brand-darker/60">Sem permissão para criar postagens.</p>
+          <p className="mt-2 text-sm text-brand-darker/60">No permission to create posts.</p>
           <div className="mt-6">
             <Link className="orange-button inline-flex" to="/blog">
-              Voltar ao Blog
+              Back to Blog
             </Link>
           </div>
         </div>
@@ -346,11 +346,11 @@ export function BlogEditorPage() {
         <div className="flex items-end justify-between gap-4">
           <div className="min-w-0">
             <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Blog Editor</h1>
-            <div className="mt-2 text-sm text-brand-darker/60">Crie e edite postagens do Blog.</div>
+            <div className="mt-2 text-sm text-brand-darker/60">Create and edit blog posts.</div>
           </div>
           <button type="button" onClick={openNew} className="orange-button">
             <Plus className="w-4 h-4" />
-            Novo Post
+            New Post
           </button>
         </div>
 
@@ -358,7 +358,7 @@ export function BlogEditorPage() {
           <input
             value={queryText}
             onChange={(e) => setQueryText(e.target.value)}
-            placeholder="Buscar por título, slug ou status..."
+            placeholder="Search by title, slug, or status..."
             className="w-full md:w-96 bg-white border border-brand-dark/10 rounded-xl px-4 py-3 text-sm text-brand-darker outline-none focus:border-brand-orange"
           />
           <button
@@ -367,7 +367,7 @@ export function BlogEditorPage() {
             className="bg-white border border-brand-dark/10 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:border-brand-orange/40 transition-colors disabled:opacity-60"
             disabled={itemsLoading}
           >
-            {itemsLoading ? 'Carregando...' : 'Recarregar'}
+            {itemsLoading ? 'Loading...' : 'Reload'}
           </button>
         </div>
 
@@ -379,9 +379,9 @@ export function BlogEditorPage() {
               <thead className="bg-brand-bg border-b border-brand-dark/10">
                 <tr>
                   <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Status</th>
-                  <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Título</th>
+                  <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Title</th>
                   <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Slug</th>
-                  <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Ações</th>
+                  <th className="px-6 py-3 text-[10px] uppercase tracking-widest text-brand-darker/60">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -404,13 +404,13 @@ export function BlogEditorPage() {
                           to={`/blog/${encodeURIComponent(p.slug)}${p.status === 'PUBLISHED' ? '' : '?preview=1'}`}
                           className="inline-flex items-center justify-center px-3 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker text-xs font-bold uppercase tracking-widest"
                         >
-                          Ver
+                          View
                         </Link>
                         <button
                           type="button"
                           onClick={() => void openEdit(p.id)}
                           className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker disabled:opacity-50"
-                          title="Editar"
+                          title="Edit"
                           disabled={!isAdmin && (p.authorUid !== user?.uid || p.status !== 'DRAFT')}
                         >
                           <Pencil className="w-4 h-4" />
@@ -419,7 +419,7 @@ export function BlogEditorPage() {
                           type="button"
                           onClick={() => setConfirmDeleteId(p.id)}
                           className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600 disabled:opacity-50"
-                          title="Excluir"
+                          title="Delete"
                           disabled={!isAdmin && (p.authorUid !== user?.uid || p.status !== 'DRAFT')}
                         >
                           <Trash2 className="w-4 h-4" />
@@ -431,7 +431,7 @@ export function BlogEditorPage() {
                 {filtered.length === 0 && !itemsLoading ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-8 text-center text-brand-darker/50 font-bold">
-                      Nenhum post.
+                      No posts.
                     </td>
                   </tr>
                 ) : null}
@@ -440,11 +440,11 @@ export function BlogEditorPage() {
           </div>
         </div>
 
-        <Modal open={modalOpen} title={editingId ? 'Editar Post' : 'Novo Post'} onClose={closeModal}>
+        <Modal open={modalOpen} title={editingId ? 'Edit Post' : 'New Post'} onClose={closeModal}>
           {form ? (
             <div className="space-y-4">
               <label className="block">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Título</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Title</div>
                 <input
                   value={form.title}
                   onChange={(e) => setForm((prev) => (prev ? { ...prev, title: e.target.value } : prev))}
@@ -463,35 +463,35 @@ export function BlogEditorPage() {
                     }
                     className="inline-flex items-center justify-center bg-white border border-brand-dark/10 px-3 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest text-brand-darker hover:bg-brand-bg transition-colors"
                   >
-                    Copiar URL
+                    Copy URL
                   </button>
                 </div>
-                <div className="mt-1 text-[11px] text-brand-darker/60">Use essa URL em botões, menus ou compartilhamento.</div>
+                <div className="mt-1 text-[11px] text-brand-darker/60">Use this URL in buttons, menus, or sharing.</div>
               </label>
 
               <label className="block">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Link da imagem de capa (URL)</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Cover image URL</div>
                 <input
                   value={form.coverImage}
                   onChange={(e) => setForm((prev) => (prev ? { ...prev, coverImage: e.target.value } : prev))}
                   placeholder="https://... (jpg/png/webp)"
                   className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
                 />
-                <div className="mt-1 text-[11px] text-brand-darker/60">Cole aqui o link direto da imagem (precisa ser uma URL pública).</div>
+                <div className="mt-1 text-[11px] text-brand-darker/60">Paste the direct image link (must be a public URL).</div>
               </label>
 
               <label className="block">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Categorias (separe por vírgula)</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Categories (comma-separated)</div>
                 <input
                   value={form.categoriesText}
                   onChange={(e) => setForm((prev) => (prev ? { ...prev, categoriesText: e.target.value } : prev))}
                   className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
-                  placeholder="Ex: Season 9, Builds, Classes"
+                  placeholder="e.g. Season 9, Builds, Classes"
                 />
               </label>
 
               <label className="block">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Links de vídeos (1 por linha, https://)</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Video links (one per line, https://)</div>
                 <textarea
                   value={form.videoUrlsText}
                   onChange={(e) => setForm((prev) => (prev ? { ...prev, videoUrlsText: e.target.value } : prev))}
@@ -501,7 +501,7 @@ export function BlogEditorPage() {
               </label>
 
               <label className="block">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Resumo</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Excerpt</div>
                 <textarea
                   value={form.excerpt}
                   onChange={(e) => setForm((prev) => (prev ? { ...prev, excerpt: e.target.value } : prev))}
@@ -510,35 +510,35 @@ export function BlogEditorPage() {
               </label>
 
               <label className="block">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Conteúdo (HTML básico)</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Content (basic HTML)</div>
                 <div className="mt-2 flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <button
                     type="button"
                     onClick={() => applyToContentSelection('<b>', '</b>')}
                     className="px-3 h-9 rounded-xl bg-white border border-brand-dark/10 hover:bg-brand-bg transition-colors text-xs font-bold uppercase tracking-widest text-brand-darker"
                   >
-                    Negrito
+                    Bold
                   </button>
                   <button
                     type="button"
                     onClick={() => applyToContentSelection('<i>', '</i>')}
                     className="px-3 h-9 rounded-xl bg-white border border-brand-dark/10 hover:bg-brand-bg transition-colors text-xs font-bold uppercase tracking-widest text-brand-darker"
                   >
-                    Itálico
+                    Italic
                   </button>
                   <button
                     type="button"
                     onClick={() => applyToContentSelection('<u>', '</u>')}
                     className="px-3 h-9 rounded-xl bg-white border border-brand-dark/10 hover:bg-brand-bg transition-colors text-xs font-bold uppercase tracking-widest text-brand-darker"
                   >
-                    Sublinhado
+                    Underline
                   </button>
                   <button
                     type="button"
                     onClick={() => applyToContentSelection('<div style=\"text-align:center\">', '</div>')}
                     className="px-3 h-9 rounded-xl bg-white border border-brand-dark/10 hover:bg-brand-bg transition-colors text-xs font-bold uppercase tracking-widest text-brand-darker"
                   >
-                    Centralizar
+                    Center
                   </button>
                   <button
                     type="button"
@@ -559,7 +559,7 @@ export function BlogEditorPage() {
                     onClick={() => applyToContentSelection('<ul>\\n<li>', '</li>\\n</ul>')}
                     className="px-3 h-9 rounded-xl bg-white border border-brand-dark/10 hover:bg-brand-bg transition-colors text-xs font-bold uppercase tracking-widest text-brand-darker"
                   >
-                    Lista
+                    List
                   </button>
                   <button
                     type="button"
@@ -597,7 +597,7 @@ export function BlogEditorPage() {
                     →
                   </button>
                   <label className="px-3 h-9 rounded-xl bg-white border border-brand-dark/10 hover:bg-brand-bg transition-colors text-xs font-bold uppercase tracking-widest text-brand-darker inline-flex items-center gap-2 cursor-pointer">
-                    Cor
+                    Color
                     <input
                       type="color"
                       className="w-6 h-6 border-0 p-0 bg-transparent"
@@ -612,7 +612,7 @@ export function BlogEditorPage() {
                   className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none min-h-[200px] md:min-h-[260px] font-mono"
                 />
                 <div className="mt-2 text-[11px] text-brand-darker/60">
-                  Tags aceitas: b, i, u, br, p, div, span(style), h2/h3, ul/ol/li, a(href).
+                  Allowed tags: b, i, u, br, p, div, span(style), h2/h3, ul/ol/li, a(href).
                 </div>
               </label>
 
@@ -624,7 +624,7 @@ export function BlogEditorPage() {
                   disabled={saving}
                 >
                   <X className="w-4 h-4" />
-                  Cancelar
+                  Cancel
                 </button>
                 <button
                   type="button"
@@ -633,16 +633,16 @@ export function BlogEditorPage() {
                   disabled={saving}
                 >
                   <Save className="w-4 h-4" />
-                  {saving ? 'Salvando...' : 'Salvar'}
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>
           ) : null}
         </Modal>
 
-        <Modal open={!!confirmDeleteId} title="Confirmar exclusão" onClose={() => setConfirmDeleteId(null)}>
+        <Modal open={!!confirmDeleteId} title="Confirm delete" onClose={() => setConfirmDeleteId(null)}>
           <div className="space-y-4">
-            <div className="text-sm text-brand-darker/70">Excluir este post?</div>
+            <div className="text-sm text-brand-darker/70">Delete this post?</div>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -650,7 +650,7 @@ export function BlogEditorPage() {
                 className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
                 disabled={deleteLoading}
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 type="button"
@@ -659,7 +659,7 @@ export function BlogEditorPage() {
                 disabled={deleteLoading}
               >
                 <Trash2 className="w-4 h-4" />
-                {deleteLoading ? 'Excluindo...' : 'Excluir'}
+                {deleteLoading ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
