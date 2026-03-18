@@ -1,8 +1,8 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail } from 'lucide-react';
+import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { AdminSidebarLink } from '../features/admin/AdminSidebarLink';
 import { AdminSettingsPanel } from '../features/admin/AdminSettingsPanel';
@@ -65,6 +65,312 @@ function firestoreErrorMessage(err: unknown) {
   return code ? `Erro: ${code}` : 'Falha no Firestore.';
 }
 
+type AdminBuildRow = {
+  id: string;
+  title: string;
+  classKey: string;
+  authorNick: string | null;
+  status: string;
+  featured: boolean;
+  ratingAvg: number;
+  ratingCount: number;
+  createdAt: Timestamp | null;
+  publishedAt: Timestamp | null;
+};
+
+function safeString(v: unknown) {
+  return typeof v === 'string' ? v : '';
+}
+
+function safeNumber(v: unknown) {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+function safeBoolean(v: unknown) {
+  return typeof v === 'boolean' ? v : false;
+}
+
+function isIndexError(e: unknown) {
+  const msg = typeof (e as any)?.message === 'string' ? String((e as any).message) : '';
+  return msg.toLowerCase().includes('requires an index');
+}
+
+function AdminBuildsPanel() {
+  const [rows, setRows] = useState<AdminBuildRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'PENDING' | 'PUBLISHED' | 'REJECTED'>('PENDING');
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(null);
+    setLoading(true);
+    const orderField = tab === 'PUBLISHED' ? 'publishedAt' : 'createdAt';
+
+    const mapRows = (snap: any) => {
+      const next: AdminBuildRow[] = snap.docs.map((d: any) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          title: safeString(data?.title) || d.id,
+          classKey: safeString(data?.classKey) || '',
+          authorNick: safeString(data?.authorNick) || null,
+          status: safeString(data?.status) || '',
+          featured: safeBoolean(data?.featured),
+          ratingAvg: safeNumber(data?.ratingAvg),
+          ratingCount: safeNumber(data?.ratingCount),
+          createdAt: (data?.createdAt as Timestamp) ?? null,
+          publishedAt: (data?.publishedAt as Timestamp) ?? null,
+        };
+      });
+
+      next.sort((a, b) => {
+        const at = (orderField === 'publishedAt' ? a.publishedAt : a.createdAt)?.toMillis?.() ?? 0;
+        const bt = (orderField === 'publishedAt' ? b.publishedAt : b.createdAt)?.toMillis?.() ?? 0;
+        return bt - at;
+      });
+
+      setRows(next);
+      setLoading(false);
+    };
+
+    const start = (withOrderBy: boolean) => {
+      const base = collection(firestore, 'builds');
+      const q = query(base, where('status', '==', tab), ...(withOrderBy ? [orderBy(orderField, 'desc')] : []), limit(200));
+
+      return onSnapshot(
+        q,
+        (snap) => {
+          setError(null);
+          mapRows(snap);
+        },
+        (err) => {
+          if (withOrderBy && isIndexError(err)) {
+            currentUnsub();
+            setError(null);
+            setLoading(true);
+            currentUnsub = start(false);
+            return;
+          }
+          setError(firestoreErrorMessage(err));
+          setRows([]);
+          setLoading(false);
+        },
+      );
+    };
+
+    let currentUnsub = () => {};
+    currentUnsub = start(true);
+    return () => currentUnsub();
+  }, [tab]);
+
+  const setStatus = async (id: string, nextStatus: 'PENDING' | 'PUBLISHED' | 'REJECTED') => {
+    setError(null);
+    setBusyId(id);
+    try {
+      const payload: any = { status: nextStatus, updatedAt: serverTimestamp() };
+      if (nextStatus === 'PUBLISHED') payload.publishedAt = serverTimestamp();
+      await setDoc(doc(firestore, 'builds', id), payload, { merge: true });
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleFeatured = async (row: AdminBuildRow) => {
+    setError(null);
+    setBusyId(row.id);
+    try {
+      await setDoc(doc(firestore, 'builds', row.id), { featured: !row.featured, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteBuild = async (id: string) => {
+    setError(null);
+    setBusyId(id);
+    try {
+      await deleteDoc(doc(firestore, 'builds', id));
+      setConfirmDelId(null);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-brand-dark/10">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="font-heading font-bold text-xl uppercase tracking-tight text-brand-darker">Build Moderation</div>
+            <div className="text-xs text-brand-darker/60">Review community build submissions and manage featured builds.</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTab('PENDING')}
+              className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full border transition-colors ${
+                tab === 'PENDING' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
+              }`}
+            >
+              Pending
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('PUBLISHED')}
+              className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full border transition-colors ${
+                tab === 'PUBLISHED' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
+              }`}
+            >
+              Published
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('REJECTED')}
+              className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full border transition-colors ${
+                tab === 'REJECTED' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
+              }`}
+            >
+              Rejected
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {error ? <div className="px-5 py-4 text-xs font-bold text-red-600 border-b border-brand-dark/10">{error}</div> : null}
+
+      <div className="divide-y divide-brand-dark/10">
+        {loading ? (
+          <div className="p-5 text-sm text-brand-darker/60">Loading...</div>
+        ) : rows.length === 0 ? (
+          <div className="p-5 text-sm text-brand-darker/60">No builds in this queue.</div>
+        ) : (
+          rows.map((r) => (
+            <div key={r.id} className="p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="font-heading font-black uppercase italic tracking-tight text-brand-darker truncate">{r.title}</div>
+                  {r.featured ? (
+                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full bg-brand-orange text-white shrink-0">Featured</span>
+                  ) : null}
+                </div>
+                <div className="mt-1 text-xs text-brand-darker/60">
+                  {r.classKey || '—'} · by <span className="text-brand-orange font-bold">{r.authorNick ?? 'Unknown'}</span> ·{' '}
+                  {r.ratingCount > 0 ? `${r.ratingAvg.toFixed(2)} (${r.ratingCount})` : 'No ratings'}
+                </div>
+                <div className="mt-2">
+                  <a
+                    href={`/build/${encodeURIComponent(r.id)}`}
+                    className="text-xs font-bold uppercase tracking-widest text-brand-orange hover:underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open build
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
+                {tab === 'PENDING' ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyId === r.id}
+                      onClick={() => void setStatus(r.id, 'PUBLISHED')}
+                      className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                    >
+                      Publish
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === r.id}
+                      onClick={() => void setStatus(r.id, 'REJECTED')}
+                      className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+                    >
+                      Reject
+                    </button>
+                  </>
+                ) : null}
+
+                {tab === 'PUBLISHED' ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyId === r.id}
+                      onClick={() => void toggleFeatured(r)}
+                      className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+                    >
+                      {r.featured ? 'Unfeature' : 'Feature'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === r.id}
+                      onClick={() => void setStatus(r.id, 'PENDING')}
+                      className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+                    >
+                      Unpublish
+                    </button>
+                  </>
+                ) : null}
+
+                {tab === 'REJECTED' ? (
+                  <button
+                    type="button"
+                    disabled={busyId === r.id}
+                    onClick={() => void setStatus(r.id, 'PENDING')}
+                    className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+                  >
+                    Move to Pending
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  disabled={busyId === r.id}
+                  onClick={() => setConfirmDelId(r.id)}
+                  className="inline-flex items-center gap-2 bg-white border border-red-500/20 text-red-700 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-50 transition-colors disabled:opacity-60"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <Modal open={!!confirmDelId} title="Delete build?" onClose={() => setConfirmDelId(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">This action cannot be undone.</div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDelId(null)}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => (confirmDelId ? void deleteBuild(confirmDelId) : undefined)}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
   return Promise.race([
     promise,
@@ -119,7 +425,7 @@ function AdminEtherTreePanel() {
         const snap = await getDoc(doc(firestore, 'config', 'ether_tree'));
         if (snap.exists()) {
           const data = snap.data() as any;
-          if (typeof data?.maxPoints === 'number') setMaxPoints(data.maxPoints);
+          if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
           if (typeof data?.infinitePoints === 'boolean') setInfinitePoints(data.infinitePoints);
           if (typeof data?.maintenanceEnabled === 'boolean') setMaintenanceEnabled(data.maintenanceEnabled);
           if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setMaintenanceMessage(data.maintenanceMessage);
@@ -230,8 +536,8 @@ function AdminEtherTreePanel() {
       );
       setFlash({ type: 'ok', text: 'Node salvo.' });
       setModalOpen(false);
-    } catch {
-      setFlash({ type: 'error', text: 'Falha ao salvar node.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar node.' });
     } finally {
       setSavingNode(false);
     }
@@ -531,8 +837,8 @@ function AdminEtherTreePanel() {
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Máximo de Pontos</div>
               <input
                 type="number"
-                value={maxPoints}
-                onChange={(e) => setMaxPoints(Number(e.target.value))}
+                value={maxPoints || ''}
+                onChange={(e) => setMaxPoints(e.target.value === '' ? 0 : Number(e.target.value))}
                 disabled={configLoading || infinitePoints}
                 className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               />
@@ -1001,7 +1307,7 @@ function AdminIncarnationTreePanel() {
         const snap = await getDoc(doc(firestore, 'config', 'incarnation_tree'));
         if (snap.exists()) {
           const data = snap.data() as any;
-          if (typeof data?.maxPoints === 'number') setMaxPoints(data.maxPoints);
+          if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
           if (typeof data?.infinitePoints === 'boolean') setInfinitePoints(data.infinitePoints);
           if (typeof data?.maintenanceEnabled === 'boolean') setMaintenanceEnabled(data.maintenanceEnabled);
           if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setMaintenanceMessage(data.maintenanceMessage);
@@ -1189,8 +1495,8 @@ function AdminIncarnationTreePanel() {
       );
       setFlash({ type: 'ok', text: 'Node salvo.' });
       setModalOpen(false);
-    } catch {
-      setFlash({ type: 'error', text: 'Falha ao salvar node.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar node.' });
     } finally {
       setSavingNode(false);
     }
@@ -1499,8 +1805,8 @@ function AdminIncarnationTreePanel() {
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Máximo de Pontos</div>
               <input
                 type="number"
-                value={maxPoints}
-                onChange={(e) => setMaxPoints(Number(e.target.value))}
+                value={maxPoints || ''}
+                onChange={(e) => setMaxPoints(e.target.value === '' ? 0 : Number(e.target.value))}
                 disabled={configLoading || infinitePoints}
                 className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               />
@@ -2326,6 +2632,7 @@ export function AdminPage() {
                 <AdminSidebarLink href="/admin/settings" label="Settings" icon={<SlidersHorizontal className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/ether-tree" label="Ether Tree" icon={<Network className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/incarnation-tree" label="Incarnation Tree" icon={<Network className="w-5 h-5" />} />
+                <AdminSidebarLink href="/admin/builds" label="Builds" icon={<Hammer className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
@@ -2340,6 +2647,7 @@ export function AdminPage() {
               <Route path="settings" element={<AdminSettingsPanel />} />
               <Route path="ether-tree" element={<AdminEtherTreePanel />} />
               <Route path="incarnation-tree" element={<AdminIncarnationTreePanel />} />
+              <Route path="builds" element={<AdminBuildsPanel />} />
               <Route path="blog" element={<AdminBlogPanel />} />
               <Route path="team" element={<AdminTeamPanel />} />
               <Route path="contact" element={<AdminContactPanel />} />

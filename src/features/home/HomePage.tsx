@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Filter, TriangleAlert } from 'lucide-react';
 import { collection, getDocs, limit, orderBy, query, where, type Timestamp } from 'firebase/firestore';
+import { classNames } from '../../data/tierlist';
 import { BuildItem } from '../../components/BuildItem';
 import { NewsCard } from '../../components/NewsCard';
 import { SeasonTierList } from '../../components/SeasonTierList';
@@ -22,8 +23,27 @@ type HomeBlogPost = {
   publishedAt: Timestamp | null;
 };
 
+type HomeBuildRow = {
+  id: string;
+  title: string;
+  classKey: string;
+  authorNick: string | null;
+  ratingAvg: number;
+  ratingCount: number;
+  publishedAt: Timestamp | null;
+  stage?: string;
+};
+
 function safeString(v: unknown) {
   return typeof v === 'string' ? v : '';
+}
+
+function safeNumber(v: unknown) {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+function safeBoolean(v: unknown) {
+  return typeof v === 'boolean' ? v : false;
 }
 
 export function HomePage() {
@@ -32,6 +52,8 @@ export function HomePage() {
   const currentYear = new Date().getFullYear();
   const [homePosts, setHomePosts] = useState<HomeBlogPost[]>([]);
   const [homePostsLoading, setHomePostsLoading] = useState(true);
+  const [featuredBuilds, setFeaturedBuilds] = useState<HomeBuildRow[]>([]);
+  const [featuredBuildsLoading, setFeaturedBuildsLoading] = useState(true);
 
   useEffect(() => {
     const baseUrl = window.location.origin.replace(/\/+$/, '');
@@ -78,6 +100,29 @@ export function HomePage() {
 
     const existingLd = Array.from(document.head.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"][data-hsb-managed="1"]'));
     for (const s of existingLd) s.remove();
+
+    const ld: unknown[] = [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: 'Hero Siege Builder',
+        url: canonicalUrl,
+      },
+      {
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: 'Hero Siege Builder',
+        url: canonicalUrl,
+      },
+    ];
+    ld.forEach((entry, idx) => {
+      const s = document.createElement('script');
+      s.type = 'application/ld+json';
+      s.text = JSON.stringify(entry);
+      s.dataset.hsbManaged = '1';
+      s.dataset.hsbLdIndex = String(idx);
+      document.head.appendChild(s);
+    });
   }, []);
 
   useEffect(() => {
@@ -112,7 +157,57 @@ export function HomePage() {
     void load();
   }, []);
 
-  const readPostText = lang === 'pt' ? 'Ler post' : lang === 'ru' ? 'Читать' : 'Read post';
+  useEffect(() => {
+    const load = async () => {
+      setFeaturedBuildsLoading(true);
+      try {
+        const snap = await getDocs(query(collection(firestore, 'builds'), where('status', '==', 'PUBLISHED'), limit(50)));
+        const rows = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            title: safeString(data?.title) || d.id,
+            classKey: safeString(data?.classKey) || 'viking',
+            authorNick: safeString(data?.authorNick) || null,
+            ratingAvg: safeNumber(data?.ratingAvg),
+            ratingCount: safeNumber(data?.ratingCount),
+            publishedAt: (data?.publishedAt as Timestamp) ?? null,
+            featured: safeBoolean(data?.featured),
+            stage: safeString(data?.stage) || undefined,
+          };
+        });
+
+        rows.sort((a, b) => {
+          const ap = (a.publishedAt as any)?.toMillis?.() ?? 0;
+          const bp = (b.publishedAt as any)?.toMillis?.() ?? 0;
+          return bp - ap;
+        });
+
+        const featured = rows.filter((r) => r.featured).slice(0, 4).map(({ featured: _f, ...r }) => r satisfies HomeBuildRow);
+        if (featured.length > 0) {
+          setFeaturedBuilds(featured);
+          return;
+        }
+        setFeaturedBuilds(rows.slice(0, 4).map(({ featured: _f, ...r }) => r satisfies HomeBuildRow));
+      } catch {
+        setFeaturedBuilds([]);
+      } finally {
+        setFeaturedBuildsLoading(false);
+      }
+    };
+    void load();
+  }, []);
+
+  const readPostText = 'Read post';
+
+  const itemPreview = (classKey: string) => {
+    const icon = `/images/classes/${encodeURIComponent(classKey)}.webp`;
+    return [icon];
+  };
+
+  const getClassName = (classKey: string) => {
+    return (classNames as Record<string, string>)[classKey] || classKey;
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -171,34 +266,32 @@ export function HomePage() {
                 </button>
               </div>
               <div className="space-y-4">
-                <BuildItem
-                  title="Sword Build"
-                  creator="Rond5aion"
-                  rating={5}
-                  items={['https://picsum.photos/seed/item1/40/40', 'https://picsum.photos/seed/item2/40/40', 'https://picsum.photos/seed/item3/40/40', 'https://picsum.photos/seed/item4/40/40']}
-                  createdByText={t.createdBy}
-                />
-                <BuildItem
-                  title="Pyromancer Build"
-                  creator="Pyromancer"
-                  rating={4}
-                  items={['https://picsum.photos/seed/item5/40/40', 'https://picsum.photos/seed/item6/40/40', 'https://picsum.photos/seed/item7/40/40', 'https://picsum.photos/seed/item8/40/40']}
-                  createdByText={t.createdBy}
-                />
-                <BuildItem
-                  title="Viking Build"
-                  creator="Rend2mon"
-                  rating={4}
-                  items={['https://picsum.photos/seed/item9/40/40', 'https://picsum.photos/seed/item10/40/40', 'https://picsum.photos/seed/item11/40/40', 'https://picsum.photos/seed/item12/40/40']}
-                  createdByText={t.createdBy}
-                />
-                <BuildItem
-                  title="Viking Build"
-                  creator="Raonit"
-                  rating={5}
-                  items={['https://picsum.photos/seed/item13/40/40', 'https://picsum.photos/seed/item14/40/40', 'https://picsum.photos/seed/item15/40/40', 'https://picsum.photos/seed/item16/40/40']}
-                  createdByText={t.createdBy}
-                />
+                {!featuredBuildsLoading && featuredBuilds.length > 0
+                  ? featuredBuilds.map((b) => (
+                      <BuildItem
+                        key={b.id}
+                        title={b.title}
+                        creator={b.authorNick ?? 'Unknown'}
+                        rating={Math.max(0, Math.min(5, Math.round(b.ratingAvg)))}
+                        items={itemPreview(b.classKey)}
+                        classNameLabel={getClassName(b.classKey)}
+                        stage={b.stage}
+                        createdByText={t.createdBy}
+                        href={`/build/${encodeURIComponent(b.id)}`}
+                      />
+                    ))
+                  : t.homeNews.slice(0, 4).map((n) => (
+                      <BuildItem
+                        key={n.title}
+                        title={n.title}
+                        creator="Community"
+                        rating={0}
+                        items={['/images/classes/viking.webp']}
+                        classNameLabel="Viking"
+                        createdByText={t.createdBy}
+                        href="/forum"
+                      />
+                    ))}
               </div>
             </section>
           </div>

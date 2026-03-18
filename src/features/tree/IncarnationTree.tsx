@@ -51,18 +51,49 @@ function getImageUrl(path: unknown) {
   return path;
 }
 
+function renderStyledText(text: string) {
+  const parts = text.split(/(\[.*?\]|\{.*?\})/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('[') && part.endsWith(']')) {
+      return (
+        <span key={idx} style={{ color: '#c7b377' }}>
+          {part}
+        </span>
+      );
+    }
+    if (part.startsWith('{') && part.endsWith('}')) {
+      return (
+        <span key={idx} style={{ color: '#a067d8' }}>
+          {part.slice(1, -1)}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
 function splitEffectParts(description: string) {
   const out: string[] = [];
   const lines = description.split(/\r?\n/);
   for (const line of lines) {
-    const commaParts = line.split(/,\s*(?=[+-])/);
-    for (const part of commaParts) {
-      const semiParts = part.split(';');
-      for (const piece of semiParts) {
-        const trimmed = piece.trim();
+    let currentPart = '';
+    let bracketLevel = 0;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '[') bracketLevel++;
+      if (char === ']') bracketLevel--;
+
+      if (char === ',' && bracketLevel === 0) {
+        const trimmed = currentPart.trim();
         if (trimmed) out.push(trimmed);
+        currentPart = '';
+      } else {
+        currentPart += char;
       }
     }
+    const finalTrimmed = currentPart.trim();
+    if (finalTrimmed) out.push(finalTrimmed);
   }
   return out;
 }
@@ -179,13 +210,24 @@ export function IncarnationTree() {
 
   const checkFullConnectivity = useCallback(
     (nodeSet: Set<number>) => {
-      if (nodeSet.size <= 1) return true;
+      if (nodeSet.size === 0) return true;
 
-      const root = nodeSet.values().next().value as number | undefined;
-      if (typeof root !== 'number') return true;
+      // Pegamos os nós de início padrão ativos
+      const activeStartNodes = Array.from(nodeSet).filter((idx) => isStartNodeIndex(idx));
 
-      const visited = new Set<number>([root]);
-      const queue: number[] = [root];
+      // Pegamos os Black Holes ativos
+      const activeBlackHoles = Array.from(nodeSet).filter((idx) => !!nodeData[String(idx + 1)]?.blackHole);
+
+      // Se não houver nenhum nó de início nem black hole ativo, mas o set não for vazio, algo está errado
+      // (A menos que as regras permitam, mas para conectividade precisamos de uma origem)
+      if (activeStartNodes.length === 0 && activeBlackHoles.length === 0) return false;
+
+      // Se houver qualquer Black Hole ativo, TODOS os Black Holes ativos agem como raízes (roots)
+      // para a busca em largura (BFS). Se não, apenas os start nodes originais.
+      const roots = activeBlackHoles.length > 0 ? activeBlackHoles : activeStartNodes;
+
+      const visited = new Set<number>(roots);
+      const queue: number[] = [...roots];
 
       while (queue.length > 0) {
         const current = queue.shift()!;
@@ -199,7 +241,7 @@ export function IncarnationTree() {
       }
       return visited.size === nodeSet.size;
     },
-    [adjacencyList],
+    [adjacencyList, nodeData],
   );
 
   useEffect(() => {
@@ -226,7 +268,7 @@ export function IncarnationTree() {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as any;
-        if (typeof data?.maxPoints === 'number') setMaxPoints(data.maxPoints);
+        if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
         if (typeof data?.infinitePoints === 'boolean') setInfinitePoints(data.infinitePoints);
         if (typeof data?.maintenanceEnabled === 'boolean') setMaintenanceEnabled(data.maintenanceEnabled);
         if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setMaintenanceMessage(data.maintenanceMessage);
@@ -241,7 +283,12 @@ export function IncarnationTree() {
     };
   }, []);
 
+  const didInit = useRef(false);
+
   useEffect(() => {
+    // Só inicializamos quando o nodeData (do Firestore) estiver carregado
+    if (Object.keys(nodeData).length === 0 || didInit.current) return;
+    
     const treeParam = searchParams.get('tree');
     if (treeParam) {
       let ids: Set<number> | null = null;
@@ -274,46 +321,49 @@ export function IncarnationTree() {
         ids.forEach((id) => {
           if (id >= 0 && id < rawData.length) validIds.add(id);
         });
-        if (validIds.size === rawData.length) setActiveNodes(validIds);
-        else if (validIds.size > 0 && !hasAnyStartNodeIndex(validIds)) setActiveNodes(new Set());
-        else if (checkFullConnectivity(validIds)) setActiveNodes(validIds);
-        else setActiveNodes(new Set());
-      }
-      return;
-    }
-
-    const saved = localStorage.getItem('incarnationTree_active');
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as unknown;
-      if (Array.isArray(parsed)) {
-        const s = new Set<number>();
-        const hasZeroBased = parsed.some((v) => typeof v === 'number' && v === 0);
-        for (const v of parsed) {
-          if (typeof v !== 'number') continue;
-          if (hasZeroBased) s.add(v);
-          else s.add(v - 1);
+        
+        // Se conseguirmos validar, marcamos como inicializado
+        if (validIds.size === rawData.length) {
+          setActiveNodes(validIds);
+          didInit.current = true;
+        } else if (validIds.size > 0 && !hasAnyStartNodeIndex(validIds)) {
+          setActiveNodes(new Set());
+          didInit.current = true;
+        } else if (checkFullConnectivity(validIds)) {
+          setActiveNodes(validIds);
+          didInit.current = true;
+        } else {
+          setActiveNodes(new Set());
+          didInit.current = true;
         }
-        if (s.size === rawData.length) setActiveNodes(s);
-        else if (s.size > 0 && !hasAnyStartNodeIndex(s)) setActiveNodes(new Set());
-        else if (checkFullConnectivity(s)) setActiveNodes(s);
       }
-    } catch {
+    } else {
+      const saved = localStorage.getItem('incarnationTree_active');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as unknown;
+          if (Array.isArray(parsed)) {
+            const s = new Set<number>();
+            const hasZeroBased = parsed.some((v) => typeof v === 'number' && v === 0);
+            for (const v of parsed) {
+              if (typeof v !== 'number') continue;
+              if (hasZeroBased) s.add(v);
+              else s.add(v - 1);
+            }
+            if (s.size === rawData.length) setActiveNodes(s);
+            else if (s.size > 0 && !hasAnyStartNodeIndex(s)) setActiveNodes(new Set());
+            else if (checkFullConnectivity(s)) setActiveNodes(s);
+          }
+        } catch {}
+      }
+      didInit.current = true;
     }
-  }, [checkFullConnectivity, searchParams]);
-
-  useLayoutEffect(() => {
-    if (didInitTransform.current) return;
-    didInitTransform.current = true;
-
-    const el = containerRef.current;
-    if (!el) return;
-
-    const rect = el.getBoundingClientRect();
-    setTransform({ x: rect.width / 2, y: rect.height / 2, k: 0.7 });
-  }, []);
+  }, [checkFullConnectivity, searchParams, nodeData]);
 
   useEffect(() => {
+    // Só sincronizamos com a URL DEPOIS que a inicialização terminou
+    if (!didInit.current) return;
+
     const encoded = compressNodes(activeNodes, rawData.length);
     const current = searchParams.get('tree') ?? '';
     if (current !== (encoded || '')) {
@@ -326,6 +376,10 @@ export function IncarnationTree() {
 
   const handleNodeClick = useCallback(
     (id: number) => {
+      const dbData = nodeData[String(id + 1)] ?? {};
+      const isBlackHole = !!dbData.blackHole;
+      const anyBlackHoleActive = Array.from(activeNodes).some((idx) => !!nodeData[String(idx + 1)]?.blackHole);
+
       const newSet = new Set(activeNodes);
       const isActive = newSet.has(id);
 
@@ -338,6 +392,7 @@ export function IncarnationTree() {
         const neighbors = adjacencyList[id] ?? [];
         const hasActiveNeighbor = neighbors.some((n) => activeNodes.has(n));
 
+        // Se for o primeiro nó da árvore
         if (activeNodes.size === 0) {
           if (!isStartNodeIndex(id)) return;
           newSet.add(id);
@@ -345,6 +400,29 @@ export function IncarnationTree() {
           return;
         }
 
+        // Se for um Black Hole e for ativado, ativa TODOS os outros Black Holes da árvore
+        if (isBlackHole) {
+          // Procura todos os Black Holes disponíveis no banco de dados
+          const allBlackHoles = Object.keys(nodeData)
+            .filter((nodeId) => !!nodeData[nodeId]?.blackHole)
+            .map((nodeId) => Number(nodeId) - 1);
+
+          // Calcula quantos Black Holes novos serão adicionados que já não estão ativos
+          const newBlackHolesToAdd = allBlackHoles.filter((bhIdx) => !activeNodes.has(bhIdx));
+
+          if (!infinitePoints) {
+            const currentPoints = activeNodes.size;
+            if (currentPoints + newBlackHolesToAdd.length > maxPoints) return;
+          }
+
+          // Adiciona todos os Black Holes ao set
+          allBlackHoles.forEach((bhIdx) => newSet.add(bhIdx));
+          
+          setActiveNodes(newSet);
+          return;
+        }
+
+        // Caso padrão: ativar se tiver vizinho ativo
         if (hasActiveNeighbor) {
           newSet.add(id);
           setActiveNodes(newSet);
@@ -352,14 +430,34 @@ export function IncarnationTree() {
         return;
       }
 
-      newSet.delete(id);
+      // Lógica para Desativar
+      if (isBlackHole) {
+        // Se for desativar um Black Hole, desativa TODOS os Black Holes de uma vez
+        Object.keys(nodeData).forEach((nodeId) => {
+          if (!!nodeData[nodeId]?.blackHole) {
+            newSet.delete(Number(nodeId) - 1);
+          }
+        });
+      } else {
+        newSet.delete(id);
+      }
+
       if (newSet.size === 0) {
         setActiveNodes(newSet);
         return;
       }
-      if (hasAnyStartNodeIndex(newSet) && checkFullConnectivity(newSet)) setActiveNodes(newSet);
+
+      // "o black hole inicial so podera ser desabilitado se os demais nao tiverem pontos apos eles"
+      // Na prática, a regra de conectividade (checkFullConnectivity) já garante que você não pode
+      // remover um nó que "quebra" o caminho para a origem.
+      // Com múltiplos Black Holes agindo como origens, a regra se torna:
+      // Você pode remover um nó se o resto da árvore ainda estiver conectado a PELO MENOS um Start Node original
+      // OU a um Black Hole (se houver algum Black Hole ativo que sirva de ponte).
+      if (checkFullConnectivity(newSet)) {
+        setActiveNodes(newSet);
+      }
     },
-    [activeNodes, adjacencyList, checkFullConnectivity, infinitePoints, maxPoints],
+    [activeNodes, adjacencyList, checkFullConnectivity, infinitePoints, maxPoints, nodeData],
   );
 
   const handleGenerateLink = () => {
@@ -389,6 +487,9 @@ export function IncarnationTree() {
       if (!data || typeof data.description !== 'string' || !data.description) return;
 
       const parts = splitEffectParts(data.description);
+      // Usamos um set local para não contar o mesmo bônus de texto duas vezes NO MESMO node
+      const seenTextInNode = new Set<string>();
+
       for (const trimmed of parts) {
         if (!trimmed) continue;
 
@@ -417,6 +518,18 @@ export function IncarnationTree() {
           (stats[key] as any).value += val;
         } else {
           const key = trimmed.toLowerCase();
+          
+          // Se já contamos este texto exato para este node, pulamos
+          if (seenTextInNode.has(key)) continue;
+          seenTextInNode.add(key);
+
+          // Correção específica para "Path to any Black Hole"
+          // Se o texto for esse, só contamos se o node for realmente um Black Hole
+          // Isso evita que start nodes com a mesma descrição sumem no contador
+          if ((key.includes('path to any black hole') || key.includes('path to any black holy')) && !data.blackHole) {
+            continue;
+          }
+
           if (!stats[key] || stats[key].type !== 'text') {
             stats[key] = {
               type: 'text',
@@ -467,11 +580,11 @@ export function IncarnationTree() {
           x2={n2.x - (CENTER_ORIGIN as { x: number; y: number }).x}
           y2={n2.y - (CENTER_ORIGIN as { x: number; y: number }).y}
           stroke={isActive ? COLOR_ACTIVE : 'rgba(100, 100, 100, 0.3)'}
-          strokeWidth={isActive ? 2 : 1.5}
+          strokeWidth={2}
           strokeLinecap="round"
           style={{
-            transition: 'stroke 0.3s ease, stroke-width 0.3s ease',
-            opacity: isActive ? 0.85 : 0.6,
+            transition: 'stroke 0.3s ease',
+            opacity: 1,
           }}
         />
       );
@@ -489,9 +602,16 @@ export function IncarnationTree() {
       const desc = (typeof dbData.description === 'string' ? dbData.description : '') ?? '';
 
       const isMatch = matchNodeSet ? matchNodeSet.has(idx) : false;
+      const isGrandNode = !!dbData.grandNode;
+      const isBlackHole = !!dbData.blackHole;
 
       let nodeSize = NODE_RADIUS * 2.04;
-      const nodeImage = '/images/inicialnode.webp';
+      if (isBlackHole) {
+        nodeSize *= 1.82;
+      } else if (isGrandNode) {
+        nodeSize *= 1.35;
+      }
+      const nodeImage = isBlackHole ? '/images/blacknode.webp' : isGrandNode ? '/images/grandnode.webp' : '/images/inicialnode.webp';
 
       const x = node.x - (CENTER_ORIGIN as { x: number; y: number }).x;
       const y = node.y - (CENTER_ORIGIN as { x: number; y: number }).y;
@@ -507,7 +627,7 @@ export function IncarnationTree() {
             height: nodeSize,
             transform: 'translate(-50%, -50%)',
             backgroundColor: 'transparent',
-            boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : isActive ? `0 0 1.5px ${COLOR_ACTIVE}` : 'none',
+            boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : 'none',
             border: 'none',
             zIndex: isMatch ? 100 : isActive || isLeaf ? 10 : 1,
             cursor: 'pointer',
@@ -523,7 +643,7 @@ export function IncarnationTree() {
           <img
             src={nodeImage}
             alt="Node"
-            className={`w-full h-full object-contain drop-shadow-sm ${isActive ? 'brightness-110 saturate-125' : 'opacity-80 grayscale'}`}
+            className={`w-full h-full object-contain ${isActive ? '' : 'opacity-80 grayscale'}`}
           />
 
           {nodeData[String(idx + 1)] && (nodeData[String(idx + 1)]?.image || nodeData[String(idx + 1)]?.icon) ? (
@@ -655,7 +775,9 @@ export function IncarnationTree() {
                         {Number.isInteger((stat as any).value) ? (stat as any).value : (stat as any).value.toFixed(2)}
                         {(stat as any).isPercent ? '%' : ''}
                       </span>
-                      <span className="text-left flex-1 text-gray-300 break-words font-medium tracking-wide">{stat.name}</span>
+                      <span className="text-left flex-1 text-[#FFD700] break-words font-medium tracking-wide opacity-90">
+                        {renderStyledText(stat.name)}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -664,7 +786,9 @@ export function IncarnationTree() {
                       ) : (stat as any).icon ? (
                         <i className={`${(stat as any).icon} mr-2`} style={{ color: (stat as any).iconColor || '#FFD700', fontSize: '12px' }} />
                       ) : null}
-                      <span className="text-left flex-1 text-[#FFD700] break-words font-medium tracking-wide">{stat.name}</span>
+                      <span className="text-left flex-1 text-[#FFD700] opacity-90 break-words font-medium tracking-wide">
+                        {renderStyledText(stat.name)}
+                      </span>
                       {(stat as any).count > 1 ? (
                         <span className="text-white/80 font-bold ml-2 whitespace-nowrap bg-white/10 px-1.5 rounded">x{(stat as any).count}</span>
                       ) : null}
@@ -685,11 +809,12 @@ export function IncarnationTree() {
               const dbData = nodeData[String(hoveredNode + 1)] || {};
               const name = (typeof dbData.name === 'string' && dbData.name) || `Node ${hoveredNode + 1}`;
               const rawDescription = (typeof dbData.description === 'string' && dbData.description) || 'No description available.';
-              const description = splitEffectParts(rawDescription).join('\n');
+              const descriptionParts = splitEffectParts(rawDescription);
               const isActive = activeNodes.has(hoveredNode);
 
               return (
                 <div className="space-y-3">
+                  {/* ... id and status ... */}
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-[#00FA9A]/60 text-[10px] uppercase block">ID</span>
@@ -709,7 +834,13 @@ export function IncarnationTree() {
 
                   <div>
                     <span className="text-[#00FA9A]/60 text-[10px] uppercase block mb-1">Description</span>
-                    <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-line">{description}</p>
+                    <div className="space-y-1">
+                      {descriptionParts.map((part, pIdx) => (
+                        <p key={pIdx} className="text-sm leading-relaxed text-gray-300">
+                          {renderStyledText(part)}
+                        </p>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-xs font-mono text-gray-500 border-t border-gray-800 pt-2">
@@ -735,9 +866,8 @@ export function IncarnationTree() {
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
         <div className="bg-[#000f1e]/90 border border-[#00FA9A] rounded-full px-6 py-3 shadow-[0_0_20px_rgba(0,250,154,0.2)] backdrop-blur-sm pointer-events-auto flex items-center gap-4">
           <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
-            <span className="text-gray-400">Nodes: </span>
-            <span className="text-white drop-shadow-[0_0_10px_#00FA9A]">
-              {activeNodes.size} / {rawData.length}
+            <span className="text-white">
+              Nodes: {activeNodes.size} / {maxPoints}
             </span>
           </div>
           <button

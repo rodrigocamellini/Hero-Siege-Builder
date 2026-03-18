@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { ChevronDown, Crown, Star, Trophy, User } from 'lucide-react';
 import type { Translation } from '../i18n/translations';
 import { classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
@@ -9,6 +9,7 @@ import { firestore } from '../firebase';
 import { SeasonCountdown } from './SeasonCountdown';
 
 type PodiumEntry = { classKey: ClassKey; votes: number };
+type TopBuilder = { uid: string; nick: string; photoURL: string | null; buildCount: number; avgRating: number };
 
 function isTier(v: unknown): v is Tier {
   return typeof v === 'string' && (tierOrder as readonly string[]).includes(v);
@@ -21,6 +22,7 @@ function isClassKey(v: unknown): v is ClassKey {
 export function Sidebar({ t }: { t: Translation }) {
   const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
   const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
+  const [topBuilders, setTopBuilders] = useState<TopBuilder[] | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -39,6 +41,57 @@ export function Sidebar({ t }: { t: Translation }) {
       setPodiumS(parsed);
     };
     void load();
+  }, []);
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(firestore, 'builds'), where('status', '==', 'PUBLISHED'), orderBy('publishedAt', 'desc'), limit(250)),
+        );
+        const agg = new Map<string, { uid: string; nick: string; photoURL: string | null; buildCount: number; ratingSum: number; ratingCount: number }>();
+        for (const d of snap.docs) {
+          const data = d.data() as any;
+          const uid = typeof data?.authorUid === 'string' ? data.authorUid : '';
+          if (!uid) continue;
+          const nick = typeof data?.authorNick === 'string' && data.authorNick.trim() ? data.authorNick.trim() : 'Unknown';
+          const photoURL = typeof data?.authorPhotoURL === 'string' && data.authorPhotoURL.trim() ? data.authorPhotoURL.trim() : null;
+          const ratingAvg = typeof data?.ratingAvg === 'number' && Number.isFinite(data.ratingAvg) ? data.ratingAvg : 0;
+          const ratingCount = typeof data?.ratingCount === 'number' && Number.isFinite(data.ratingCount) ? data.ratingCount : 0;
+          const ratingSum = ratingAvg * ratingCount;
+
+          const prev = agg.get(uid) ?? { uid, nick, photoURL, buildCount: 0, ratingSum: 0, ratingCount: 0 };
+          agg.set(uid, {
+            uid,
+            nick: prev.nick || nick,
+            photoURL: prev.photoURL || photoURL,
+            buildCount: prev.buildCount + 1,
+            ratingSum: prev.ratingSum + ratingSum,
+            ratingCount: prev.ratingCount + ratingCount,
+          });
+        }
+
+        const rows: TopBuilder[] = Array.from(agg.values())
+          .map((r) => ({
+            uid: r.uid,
+            nick: r.nick,
+            photoURL: r.photoURL,
+            buildCount: r.buildCount,
+            avgRating: r.ratingCount > 0 ? r.ratingSum / r.ratingCount : 0,
+          }))
+          .sort((a, b) => (b.buildCount !== a.buildCount ? b.buildCount - a.buildCount : b.avgRating - a.avgRating))
+          .slice(0, 8);
+
+        if (!stop) setTopBuilders(rows);
+      } catch {
+        if (!stop) setTopBuilders([]);
+      }
+    };
+    void load();
+    return () => {
+      stop = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -217,27 +270,64 @@ export function Sidebar({ t }: { t: Translation }) {
           <ChevronDown className="w-4 h-4 text-brand-dark/40" />
         </h3>
         <div className="space-y-6">
-          {[
-            { name: 'Eivrebrioose', rank: 1, stars: 4 },
-            { name: 'Pyromancer', rank: 2, stars: 4 },
-            { name: 'Marksman', rank: 3, stars: 4 },
-            { name: 'Marksman', rank: 4, stars: 4 },
-          ].map((builder, i) => (
-            <div key={i} className="flex items-center justify-between group cursor-pointer">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-brand-dark/30 w-4">{builder.rank}</span>
-                <div className="w-9 h-9 md:w-10 md:h-10 bg-brand-bg rounded-full flex items-center justify-center border border-brand-dark/5 group-hover:bg-brand-orange/10 transition-colors">
-                  <User className="w-4 h-4 md:w-5 md:h-5 text-brand-dark/30" />
+          {topBuilders === null ? (
+            <div className="animate-pulse h-24" />
+          ) : topBuilders.length === 0 ? (
+            <div className="text-xs font-bold text-brand-dark/40 uppercase tracking-widest">No data yet</div>
+          ) : (
+            topBuilders.map((builder, i) => {
+              const roundedStars = Math.max(0, Math.min(5, Math.round(builder.avgRating)));
+              const podium =
+                i === 0
+                  ? { text: 'text-[#D4AF37]', border: 'border-[#D4AF37]/50' }
+                  : i === 1
+                    ? { text: 'text-[#A9A9A9]', border: 'border-[#C0C0C0]/50' }
+                    : i === 2
+                      ? { text: 'text-[#CD7F32]', border: 'border-[#CD7F32]/50' }
+                      : null;
+              return (
+                <div key={builder.uid} className="flex items-center justify-between group">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 flex items-center gap-1">
+                      <span className={`text-xs font-bold tabular-nums ${podium ? podium.text : 'text-brand-dark/30'}`}>{i + 1}</span>
+                      {podium ? <Trophy className={`w-4 h-4 ${podium.text}`} /> : null}
+                    </div>
+                    <div
+                      className={`w-9 h-9 md:w-10 md:h-10 bg-brand-bg rounded-full flex items-center justify-center border ${
+                        podium ? podium.border : 'border-brand-dark/5'
+                      } group-hover:bg-brand-orange/10 transition-colors overflow-hidden`}
+                    >
+                      {builder.photoURL ? (
+                        <img
+                          src={builder.photoURL}
+                          alt={builder.nick}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <User className="w-4 h-4 md:w-5 md:h-5 text-brand-dark/30" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-brand-darker truncate group-hover:text-brand-orange transition-colors">{builder.nick}</div>
+                      <div className="text-[10px] font-bold text-brand-dark/30 uppercase tracking-widest tabular-nums">{builder.buildCount} builds</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="flex gap-0.5">
+                      {[...Array(5)].map((_, j) => (
+                        <Star key={j} className={`w-3 h-3 ${j < roundedStars ? 'text-brand-orange fill-current' : 'text-brand-dark/10'}`} />
+                      ))}
+                    </div>
+                    <div className="text-[10px] font-bold text-brand-dark/30 tabular-nums">{builder.avgRating > 0 ? builder.avgRating.toFixed(2) : '—'}</div>
+                  </div>
                 </div>
-                <span className="text-sm font-bold text-brand-darker group-hover:text-brand-orange transition-colors">{builder.name}</span>
-              </div>
-              <div className="flex gap-0.5">
-                {[...Array(4)].map((_, j) => (
-                  <Star key={j} className="w-3 h-3 text-brand-orange fill-current" />
-                ))}
-              </div>
-            </div>
-          ))}
+              );
+            })
+          )}
         </div>
       </div>
 

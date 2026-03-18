@@ -1,7 +1,7 @@
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Star, Trash2 } from 'lucide-react';
+import { Share2, Star, Trash2 } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { StandardPage } from '../components/StandardPage';
 import { useAuth } from '../features/auth/AuthProvider';
@@ -155,6 +155,7 @@ export function BlogPostPage() {
   const [ratingCount, setRatingCount] = useState(0);
   const [myRating, setMyRating] = useState<number | null>(null);
   const [hoverRating, setHoverRating] = useState<number | null>(null);
+  const [shareFlash, setShareFlash] = useState<string | null>(null);
 
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
@@ -400,6 +401,27 @@ export function BlogPostPage() {
     }
   }
 
+  async function sharePost() {
+    try {
+      const url = typeof window !== 'undefined' ? window.location.href : '';
+      if (!url) return;
+      const title = post?.title || 'Hero Siege Builder';
+      const nav: any = typeof navigator !== 'undefined' ? navigator : null;
+      if (nav && typeof nav.share === 'function') {
+        await nav.share({ title, url });
+        return;
+      }
+      if (nav && nav.clipboard && typeof nav.clipboard.writeText === 'function') {
+        await nav.clipboard.writeText(url);
+        setShareFlash('Link copied');
+        window.setTimeout(() => setShareFlash(null), 1800);
+      }
+    } catch {
+      setShareFlash('Copy failed');
+      window.setTimeout(() => setShareFlash(null), 1800);
+    }
+  }
+
   const callbackUrl = `${location.pathname}${location.search}`;
   const canonicalPath = slug ? `/blog/${encodeURIComponent(slug)}` : '/blog';
   const pageTitle = post?.title ? `${post.title} | Hero Siege Builder` : 'Blog Post | Hero Siege Builder';
@@ -553,7 +575,20 @@ export function BlogPostPage() {
                     <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Discussion</div>
                     <div className="mt-1 font-heading font-bold uppercase tracking-tight text-brand-darker">Comments</div>
                   </div>
-                  {commentsLoading ? <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">Loading...</div> : null}
+                  <div className="flex items-center gap-2">
+                    {shareFlash ? <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50">{shareFlash}</div> : null}
+                    <button
+                      type="button"
+                      onClick={() => void sharePost()}
+                      className="inline-flex items-center gap-2 bg-white border border-brand-dark/10 text-brand-darker px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors"
+                      aria-label="Share"
+                      title="Share"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share
+                    </button>
+                    {commentsLoading ? <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">Loading...</div> : null}
+                  </div>
                 </div>
 
                 {commentsError ? <div className="mt-4 text-xs font-bold text-red-600">{commentsError}</div> : null}

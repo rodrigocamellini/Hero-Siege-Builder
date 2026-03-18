@@ -28,8 +28,8 @@ export function StandardPage({ children, title, description, canonicalPath, noin
   const location = useLocation();
 
   useEffect(() => {
-    const baseUrl = window.location.origin.replace(/\/+$/, '');
-    const canonicalUrl = `${baseUrl}${canonicalPath ?? location.pathname}`;
+    const siteUrl = String(import.meta.env.VITE_SITE_URL || 'https://www.herosiegebuilder.com').replace(/\/+$/, '');
+    const canonicalUrl = `${siteUrl}${canonicalPath ?? location.pathname}`;
 
     if (title) document.title = title;
 

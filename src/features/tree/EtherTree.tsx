@@ -199,7 +199,7 @@ export function EtherTree() {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as any;
-        if (typeof data?.maxPoints === 'number') setMaxPoints(data.maxPoints);
+        if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
         if (typeof data?.infinitePoints === 'boolean') setInfinitePoints(data.infinitePoints);
         if (typeof data?.maintenanceEnabled === 'boolean') setMaintenanceEnabled(data.maintenanceEnabled);
         if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setMaintenanceMessage(data.maintenanceMessage);
@@ -214,7 +214,11 @@ export function EtherTree() {
     };
   }, []);
 
+  const didInit = useRef(false);
+
   useEffect(() => {
+    if (didInit.current) return;
+
     const treeParam = searchParams.get('tree');
     if (treeParam) {
       let ids: Set<number> | null = null;
@@ -244,24 +248,28 @@ export function EtherTree() {
         if (checkFullConnectivity(validIds)) setActiveNodes(validIds);
         else setActiveNodes(new Set([0]));
       }
+      didInit.current = true;
       return;
     }
 
     const saved = localStorage.getItem('etherTree_active');
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as unknown;
-      if (!Array.isArray(parsed)) return;
-      const validIds = new Set<number>();
-      for (const v of parsed) if (typeof v === 'number') validIds.add(v);
-      validIds.add(0);
-      if (checkFullConnectivity(validIds)) setActiveNodes(validIds);
-    } catch {
-      return;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as unknown;
+        if (Array.isArray(parsed)) {
+          const validIds = new Set<number>();
+          for (const v of parsed) if (typeof v === 'number') validIds.add(v);
+          validIds.add(0);
+          if (checkFullConnectivity(validIds)) setActiveNodes(validIds);
+        }
+      } catch {}
     }
+    didInit.current = true;
   }, [searchParams]);
 
   useEffect(() => {
+    if (!didInit.current) return;
+
     const encoded = compressNodes(activeNodes, rawData.length);
     const currentParam = searchParams.get('tree');
 
@@ -577,9 +585,8 @@ export function EtherTree() {
 
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-[#000f1e]/95 border border-[#00f2ff] rounded-full px-6 py-3 shadow-[0_0_30px_rgba(0,242,255,0.2)] backdrop-blur-sm">
         <div className="text-sm font-bold min-w-[120px]">
-          <span className="text-gray-400">Points: </span>
-          <span className="text-white drop-shadow-[0_0_10px_#00f2ff]">
-            {activeNodes.size - 1}
+          <span className="text-white">
+            Points: {activeNodes.size - 1}
             {infinitePoints ? ' / ∞' : ` / ${maxPoints}`}
           </span>
         </div>
@@ -742,11 +749,11 @@ export function EtherTree() {
                 x2={n2.x - (CENTER_ORIGIN as { x: number; y: number }).x}
                 y2={n2.y - (CENTER_ORIGIN as { x: number; y: number }).y}
                 stroke={isActive ? COLOR_ACTIVE : 'rgba(100, 100, 100, 0.3)'}
-                strokeWidth={isActive ? 2 : 1.5}
+                strokeWidth={2}
                 strokeLinecap="round"
                 style={{
-                  transition: 'stroke 0.3s ease, stroke-width 0.3s ease',
-                  opacity: isActive ? 0.85 : 0.6,
+                  transition: 'stroke 0.3s ease',
+                  opacity: 1,
                 }}
               />
             );
@@ -766,6 +773,8 @@ export function EtherTree() {
           const st = searchTerm.trim().toLowerCase();
           const isMatch = st.length >= 2 && (name.toLowerCase().includes(st) || desc.toLowerCase().includes(st));
 
+          const isBlackHole = !!dbData.blackHole;
+
           let nodeSize = NODE_RADIUS * 2;
           let nodeImage: string | null = null;
 
@@ -775,6 +784,9 @@ export function EtherTree() {
           } else if (isCore) {
             nodeSize = NODE_RADIUS * 12;
             nodeImage = '/images/ether/nodeinicial.webp';
+          } else if (isBlackHole) {
+            nodeSize = NODE_RADIUS * 3.5 * 1.82;
+            nodeImage = '/images/blacknode.webp';
           } else {
             nodeSize = NODE_RADIUS * 3.5;
             nodeImage = '/images/node.webp';
@@ -794,7 +806,7 @@ export function EtherTree() {
                 height: nodeSize,
                 transform: 'translate(-50%, -50%)',
                 backgroundColor: nodeImage ? 'transparent' : isCore ? COLOR_CORE : isActive ? COLOR_ACTIVE : COLOR_INACTIVE,
-                boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : isActive ? `0 0 1.5px ${isCore ? COLOR_CORE : COLOR_ACTIVE}` : 'none',
+                boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : 'none',
                 border: nodeImage ? 'none' : isActive ? '2px solid white' : `1px solid ${COLOR_ACTIVE}33`,
                 zIndex: isMatch ? 100 : isActive || isLeaf ? 10 : 1,
                 cursor: 'pointer',
@@ -811,7 +823,7 @@ export function EtherTree() {
                 <img
                   src={nodeImage}
                   alt="Node"
-                  className={`w-full h-full object-contain drop-shadow-sm ${isActive ? 'brightness-110 saturate-125' : 'opacity-80 grayscale'}`}
+                  className={`w-full h-full object-contain ${isActive ? '' : 'opacity-80 grayscale'}`}
                 />
               ) : null}
 

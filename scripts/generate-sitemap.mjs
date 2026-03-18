@@ -130,7 +130,7 @@ async function dynamicPathsFromFirestore(templates) {
   const out = [];
 
   const hasBlog = templates.includes('/blog/:slug');
-  const hasBuilds = templates.includes('/builds/:slug') || templates.includes('/build/:slug');
+  const hasBuilds = templates.some((t) => typeof t === 'string' && (t.startsWith('/build/:') || t.startsWith('/builds/:')));
   const hasNews = templates.includes('/news/:slug') || templates.includes('/noticias/:slug');
 
   if (hasBlog) {
@@ -154,8 +154,11 @@ async function dynamicPathsFromFirestore(templates) {
       for (const d of docs) {
         const fields = d?.fields;
         if (!isPublishedDoc(fields)) continue;
+        const name = typeof d?.name === 'string' ? d.name : '';
+        const docId = name ? name.split('/').pop() : '';
         const slug = getStringField(fields, 'slug');
-        if (slug) out.push(`/builds/${slug}`);
+        const path = slug ? `/builds/${slug}` : docId ? `/build/${docId}` : null;
+        if (path) out.push(path);
       }
       if (out.length) break;
     }

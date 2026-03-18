@@ -1,0 +1,274 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.uid == "hfsHCehqYgen7OAfXUYl58fEPo02" ||
+        request.auth.token.get('email', '').lower() == "rrcamellini@gmail.com"
+      );
+    }
+
+    function userRole() {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function isDeveloper() {
+      return userRole() == 'DEVELOPER';
+    }
+
+    function isStaff() {
+      return isAdmin() || isDeveloper() || userRole() == 'MODERATOR';
+    }
+
+    function blogAllowedRoles() {
+      return exists(/databases/$(database)/documents/appSettings/blog)
+        ? get(/databases/$(database)/documents/appSettings/blog).data.allowedRoles
+        : ['DEVELOPER'];
+    }
+
+    function blogDeleteAllowedRoles() {
+      return exists(/databases/$(database)/documents/appSettings/blog)
+        ? get(/databases/$(database)/documents/appSettings/blog).data.deleteAllowedRoles
+        : ['DEVELOPER'];
+    }
+
+    function canWriteBlog() {
+      return request.auth != null && (canModerateBlog() || (userRole() in blogAllowedRoles()));
+    }
+
+    function canModerateBlog() {
+      return request.auth != null && (isAdmin() || userRole() in ['DEVELOPER', 'MODERATOR']);
+    }
+
+    function canDeleteBlogContent() {
+      return request.auth != null && (isAdmin() || (userRole() in blogDeleteAllowedRoles()));
+    }
+
+    match /users/{uid} {
+      allow read: if isStaff() || (request.auth != null && request.auth.uid == uid);
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if isStaff()
+        || (
+          request.auth != null
+          && request.auth.uid == uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.createdAt == resource.data.createdAt
+          && (
+            request.resource.data.nick == resource.data.nick
+            || (
+              resource.data.nick == null
+              && request.resource.data.nick is string
+              && request.resource.data.nick.size() >= 3
+              && request.resource.data.nick.size() <= 20
+              && request.resource.data.nick.lower() == request.resource.data.nick
+              && request.resource.data.nick.matches('^[a-z0-9_]+$')
+            )
+          )
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['photoURL', 'displayName', 'updatedAt', 'nick'])
+        );
+      allow delete: if isStaff();
+    }
+
+    match /nicks/{nickKey} {
+      allow read: if true;
+      allow create: if isStaff()
+        || (
+          request.auth != null
+          && !exists(/databases/$(database)/documents/nicks/$(nickKey))
+          && nickKey.matches('^[a-z0-9_]{3,20}$')
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['uid', 'nick', 'createdAt', 'updatedAt'])
+          && request.resource.data.nick is string
+          && request.resource.data.nick.lower() == request.resource.data.nick
+          && request.resource.data.nick.matches('^[a-z0-9_]+$')
+        );
+      allow update, delete: if isStaff();
+    }
+
+    match /appSettings/{docId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /tierlistVotes/{uid} {
+      allow read: if true;
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isStaff() || (request.auth != null && request.auth.uid == uid);
+    }
+
+    match /tierlist/{docId} {
+      allow read: if true;
+      allow write: if isAdmin() || (isDeveloper() && docId == 'aggregate');
+    }
+
+    match /team/{memberId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /ether_tree_nodes/{nodeId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /incarnation_tree_nodes/{nodeId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /ether_backgrounds/{bgId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /incarnation_backgrounds/{bgId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isStaff();
+    }
+
+    match /builds/{buildId} {
+      allow read: if resource.data.status == "PUBLISHED"
+        || isStaff()
+        || (request.auth != null && request.auth.uid == resource.data.authorUid);
+
+      allow create: if request.auth != null
+        && request.resource.data.authorUid is string
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.status == "PENDING"
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.classKey is string
+        && request.resource.data.buildType in ["starterGame", "midGame", "endGame"]
+        && request.resource.data.featured == false
+        && request.resource.data.ratingAvg == 0
+        && request.resource.data.ratingCount == 0
+        && request.resource.data.ratingSum == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.publishedAt == null;
+
+      allow update: if isStaff()
+        || (
+          request.auth != null
+          && request.resource.data.authorUid == resource.data.authorUid
+          && request.resource.data.title == resource.data.title
+          && request.resource.data.excerpt == resource.data.excerpt
+          && request.resource.data.content == resource.data.content
+          && request.resource.data.classKey == resource.data.classKey
+          && request.resource.data.className == resource.data.className
+          && request.resource.data.buildType == resource.data.buildType
+          && request.resource.data.stats == resource.data.stats
+          && request.resource.data.relics == resource.data.relics
+          && request.resource.data.charms == resource.data.charms
+          && request.resource.data.items == resource.data.items
+          && request.resource.data.itemsSlots == resource.data.itemsSlots
+          && request.resource.data.itemsAdvanced == resource.data.itemsAdvanced
+          && request.resource.data.mercenaryType == resource.data.mercenaryType
+          && request.resource.data.mercenaryGear == resource.data.mercenaryGear
+          && request.resource.data.authorNick == resource.data.authorNick
+          && request.resource.data.authorPhotoURL == resource.data.authorPhotoURL
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.featured == resource.data.featured
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.publishedAt == resource.data.publishedAt
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(["ratingSum", "ratingCount", "ratingAvg", "updatedAt"])
+          && request.resource.data.ratingSum is int
+          && request.resource.data.ratingSum >= 0
+          && request.resource.data.ratingCount is int
+          && request.resource.data.ratingCount >= 0
+          && request.resource.data.ratingCount <= 500000
+          && request.resource.data.ratingAvg is number
+          && request.resource.data.ratingAvg >= 0
+          && request.resource.data.ratingAvg <= 5
+          && request.resource.data.ratingSum <= request.resource.data.ratingCount * 5
+          && request.resource.data.updatedAt == request.time
+        );
+
+      allow delete: if isStaff();
+
+      match /ratings/{uid} {
+        allow read: if isStaff() || (request.auth != null && request.auth.uid == uid);
+        allow create, update: if request.auth != null
+          && request.auth.uid == uid
+          && request.resource.data.value is int
+          && request.resource.data.value >= 1
+          && request.resource.data.value <= 5
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isStaff() || (request.auth != null && request.auth.uid == uid);
+      }
+    }
+
+    match /blogPosts/{postId} {
+      allow read: if resource.data.status == "PUBLISHED" || canWriteBlog();
+      allow create: if canWriteBlog()
+        && request.resource.data.slug == postId
+        && (
+          isAdmin()
+          || (request.resource.data.authorUid is string && request.resource.data.authorUid == request.auth.uid)
+        )
+        && (
+          (canModerateBlog() && request.resource.data.status in ["DRAFT", "PUBLISHED"])
+          || (!canModerateBlog() && request.resource.data.status == "DRAFT")
+        );
+      allow update: if canWriteBlog()
+        && request.resource.data.slug == postId
+        && (
+          isAdmin()
+          || (resource.data.authorUid == request.auth.uid && request.resource.data.authorUid == request.auth.uid)
+        )
+        && (
+          (canModerateBlog() && request.resource.data.status in ["DRAFT", "PUBLISHED"])
+          || (!canModerateBlog() && request.resource.data.status == "DRAFT")
+        );
+      allow delete: if canDeleteBlogContent();
+
+      match /ratings/{uid} {
+        allow read: if true;
+        allow create, update: if request.auth != null
+          && request.auth.uid == uid
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5;
+        allow delete: if isStaff() || (request.auth != null && request.auth.uid == uid);
+      }
+
+      match /comments/{commentId} {
+        allow read: if resource.data.status == "PUBLISHED" || canModerateBlog();
+        allow create: if request.auth != null
+          && request.resource.data.status == "PENDING"
+          && request.resource.data.authorUid is string
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 2
+          && request.resource.data.text.size() <= 800;
+        allow update: if canModerateBlog()
+          && request.resource.data.authorUid == resource.data.authorUid
+          && request.resource.data.text == resource.data.text
+          && request.resource.data.status in ["PENDING", "PUBLISHED"]
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(["status", "updatedAt", "publishedAt"]);
+        allow delete: if canDeleteBlogContent();
+      }
+    }
+
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
