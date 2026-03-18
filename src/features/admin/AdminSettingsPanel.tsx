@@ -290,7 +290,7 @@ export function AdminSettingsPanel() {
         <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Blog</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Forum</div>
               <div className="text-sm font-bold text-brand-darker">Quem pode deletar posts e comentários</div>
               <div className="text-xs text-brand-darker/60">Exibe lixeira no post e libera exclusão no painel.</div>
             </div>

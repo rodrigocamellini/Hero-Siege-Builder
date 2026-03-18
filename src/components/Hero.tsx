@@ -16,7 +16,7 @@ export function Hero({ t }: { t: Translation }) {
               dangerouslySetInnerHTML={{ __html: t.heroTitle }}
             />
             <p className="text-base md:text-xl text-white/70 mb-8 md:mb-10 font-medium max-w-lg mx-auto md:mx-0">{t.heroSubtitle}</p>
-            <Link to="/blog/new-class-the-prophet" className="orange-button text-lg md:text-xl px-8 md:px-10 py-3 md:py-4 h-14 md:h-16 w-full sm:w-auto">
+            <Link to="/blog/new-class-the-prophet" className="orange-button text-sm md:text-base px-6 md:px-8 py-2 md:py-3 h-10 md:h-12 w-full sm:w-auto">
               {t.createBuild}
             </Link>
           </motion.div>

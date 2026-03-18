@@ -2628,14 +2628,19 @@ export function AdminPage() {
                 </div>
               </div>
               <nav className="py-2">
-                <AdminSidebarLink href="/admin/users" label="Users" icon={<Users className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/users" label="Users" icon={<Users className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/ether-tree" label="Ether Tree" icon={<Network className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/incarnation-tree" label="Incarnation Tree" icon={<Network className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/builds" label="Builds" icon={<Hammer className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
+                </nav>
+            </div>
+
+            <div className="mt-6 bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
+              <nav className="py-2">
                 <AdminSidebarLink href="/admin/settings" label="Settings" icon={<SlidersHorizontal className="w-5 h-5" />} />
-                <AdminSidebarLink href="/admin/ether-tree" label="Ether Tree" icon={<Network className="w-5 h-5" />} />
-                <AdminSidebarLink href="/admin/incarnation-tree" label="Incarnation Tree" icon={<Network className="w-5 h-5" />} />
-                <AdminSidebarLink href="/admin/builds" label="Builds" icon={<Hammer className="w-5 h-5" />} />
-                <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
-                <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
-                <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
               </nav>
             </div>
           </aside>
