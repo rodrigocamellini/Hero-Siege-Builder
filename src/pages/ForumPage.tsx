@@ -1468,8 +1468,14 @@ export function ForumPage() {
                           {classSkillsData[tk === 'tree1' ? 't1' : 't2']}
                         </div>
                         <div className="grid grid-cols-3 gap-2">
-                          {classSkillsData[tk].filter(s => s.name || s.icon).map((skill) => {
+                          {classSkillsData[tk].map((skill) => {
                             const points = nbSkillPoints[skill.id] || 0;
+                            const isEmpty = !skill.name && !skill.icon;
+                            
+                            if (isEmpty) {
+                              return <div key={skill.id} className="aspect-square rounded-xl border border-brand-dark/[0.03] bg-brand-dark/[0.01]" />;
+                            }
+
                             return (
                               <div key={skill.id} className="relative aspect-square">
                                 <button
@@ -1489,7 +1495,9 @@ export function ForumPage() {
                                   {skill.icon ? (
                                     <img src={skill.icon} alt={skill.name} className="w-full h-full object-contain pixelated p-1" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
                                   ) : (
-                                    <Circle className="w-4 h-4 text-brand-dark/10" />
+                                    <div className="w-full h-full flex items-center justify-center bg-brand-bg">
+                                      <Circle className="w-4 h-4 text-brand-dark/10" />
+                                    </div>
                                   )}
                                 </button>
                                 {points > 0 && (
@@ -1696,32 +1704,55 @@ export function ForumPage() {
                     </div>
 
                     {/* Skills Preview */}
-                    {classSkillsData && Object.keys(nbSkillPoints).length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-brand-dark/5">
-                        <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30">Skills Distributed</div>
-                        <div className="space-y-3">
-                          {(['tree1', 'tree2'] as const).map(tk => {
-                            const treeSkills = classSkillsData[tk].filter(s => nbSkillPoints[s.id] > 0);
-                            if (treeSkills.length === 0) return null;
-                            return (
-                              <div key={tk} className="space-y-1">
-                                <div className="text-[7px] font-black uppercase text-brand-orange/60 italic">{classSkillsData[tk === 'tree1' ? 't1' : 't2']}</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {treeSkills.map(s => (
-                                    <div key={s.id} className="flex items-center gap-2 bg-brand-bg rounded-lg p-1 border border-brand-dark/5">
-                                      <div className="w-6 h-6 rounded bg-white flex items-center justify-center overflow-hidden shrink-0 border border-brand-dark/5">
-                                        <img src={s.icon} alt="" className="w-5 h-5 object-contain pixelated" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <div className="text-[8px] font-bold text-brand-darker truncate leading-none mb-0.5">{s.name}</div>
-                                        <div className="text-[7px] font-black text-brand-orange uppercase">{nbSkillPoints[s.id]} pts</div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
+                    {classSkillsData && (
+                      <div className="space-y-4 pt-4 border-t border-brand-dark/5">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30">Skill Trees Preview</div>
+                          <div className="px-1.5 py-0.5 bg-brand-orange/10 rounded-md border border-brand-orange/20">
+                            <span className="text-[8px] font-black text-brand-orange uppercase">Points: {Object.values(nbSkillPoints).reduce((acc, p) => acc + p, 0)} / 100</span>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          {(['tree1', 'tree2'] as const).map(tk => (
+                            <div key={tk} className="space-y-2">
+                              <div className="text-[7px] font-black uppercase text-brand-orange/60 italic border-b border-brand-orange/5 pb-0.5">
+                                {classSkillsData[tk === 'tree1' ? 't1' : 't2']}
                               </div>
-                            );
-                          })}
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {classSkillsData[tk].map((s) => {
+                                  const points = nbSkillPoints[s.id] || 0;
+                                  const isEmpty = !s.name && !s.icon;
+                                  
+                                  if (isEmpty) {
+                                    return <div key={s.id} className="aspect-square rounded-md bg-brand-dark/[0.02]" />;
+                                  }
+
+                                  return (
+                                    <div key={s.id} className="relative aspect-square">
+                                      <div className={`w-full h-full rounded-lg border flex items-center justify-center overflow-hidden transition-all ${
+                                        points > 0 
+                                          ? 'bg-white border-brand-orange shadow-sm' 
+                                          : 'bg-brand-bg border-brand-dark/5 opacity-30 grayscale'
+                                      }`}>
+                                        <img 
+                                          src={s.icon} 
+                                          alt="" 
+                                          className="w-full h-full object-contain pixelated p-0.5" 
+                                          onError={e => e.currentTarget.src = '/images/herosiege.png'} 
+                                        />
+                                      </div>
+                                      {points > 0 && (
+                                        <div className="absolute -top-4 -right-4 min-w-[36px] h-9 px-2 rounded-full bg-brand-orange text-white text-[24px] font-black flex items-center justify-center shadow-2xl border-2 border-white z-20 pointer-events-none">
+                                          {points}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
