@@ -167,37 +167,50 @@ service cloud.firestore {
         || (
           request.auth != null
           && request.resource.data.authorUid == resource.data.authorUid
-          && request.resource.data.title == resource.data.title
-          && request.resource.data.excerpt == resource.data.excerpt
-          && request.resource.data.content == resource.data.content
-          && request.resource.data.classKey == resource.data.classKey
-          && request.resource.data.className == resource.data.className
-          && request.resource.data.buildType == resource.data.buildType
-          && request.resource.data.stats == resource.data.stats
-          && request.resource.data.relics == resource.data.relics
-          && request.resource.data.charms == resource.data.charms
-          && request.resource.data.items == resource.data.items
-          && request.resource.data.itemsSlots == resource.data.itemsSlots
-          && request.resource.data.itemsAdvanced == resource.data.itemsAdvanced
-          && request.resource.data.mercenaryType == resource.data.mercenaryType
-          && request.resource.data.mercenaryGear == resource.data.mercenaryGear
-          && request.resource.data.authorNick == resource.data.authorNick
-          && request.resource.data.authorPhotoURL == resource.data.authorPhotoURL
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.featured == resource.data.featured
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.publishedAt == resource.data.publishedAt
-          && request.resource.data.diff(resource.data).changedKeys().hasOnly(["ratingSum", "ratingCount", "ratingAvg", "updatedAt"])
-          && request.resource.data.ratingSum is int
-          && request.resource.data.ratingSum >= 0
-          && request.resource.data.ratingCount is int
-          && request.resource.data.ratingCount >= 0
-          && request.resource.data.ratingCount <= 500000
-          && request.resource.data.ratingAvg is number
-          && request.resource.data.ratingAvg >= 0
-          && request.resource.data.ratingAvg <= 5
-          && request.resource.data.ratingSum <= request.resource.data.ratingCount * 5
-          && request.resource.data.updatedAt == request.time
+          && (
+            (
+              resource.data.authorUid == request.auth.uid 
+              && request.resource.data.status == resource.data.status
+              && request.resource.data.featured == resource.data.featured
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.publishedAt == resource.data.publishedAt
+              && request.resource.data.updatedAt == request.time
+            )
+            ||
+            (
+              request.resource.data.title == resource.data.title
+              && request.resource.data.excerpt == resource.data.excerpt
+              && request.resource.data.content == resource.data.content
+              && request.resource.data.classKey == resource.data.classKey
+              && request.resource.data.className == resource.data.className
+              && request.resource.data.buildType == resource.data.buildType
+              && request.resource.data.stats == resource.data.stats
+              && request.resource.data.relics == resource.data.relics
+              && request.resource.data.charms == resource.data.charms
+              && request.resource.data.items == resource.data.items
+              && request.resource.data.itemsSlots == resource.data.itemsSlots
+              && request.resource.data.itemsAdvanced == resource.data.itemsAdvanced
+              && request.resource.data.mercenaryType == resource.data.mercenaryType
+              && request.resource.data.mercenaryGear == resource.data.mercenaryGear
+              && request.resource.data.authorNick == resource.data.authorNick
+              && request.resource.data.authorPhotoURL == resource.data.authorPhotoURL
+              && request.resource.data.status == resource.data.status
+              && request.resource.data.featured == resource.data.featured
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.publishedAt == resource.data.publishedAt
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly(["ratingSum", "ratingCount", "ratingAvg", "updatedAt"])
+              && request.resource.data.ratingSum is int
+              && request.resource.data.ratingSum >= 0
+              && request.resource.data.ratingCount is int
+              && request.resource.data.ratingCount >= 0
+              && request.resource.data.ratingCount <= 500000
+              && request.resource.data.ratingAvg is number
+              && request.resource.data.ratingAvg >= 0
+              && request.resource.data.ratingAvg <= 5
+              && request.resource.data.ratingSum <= request.resource.data.ratingCount * 5
+              && request.resource.data.updatedAt == request.time
+            )
+          )
         );
 
       allow delete: if isStaff();
@@ -230,11 +243,15 @@ service cloud.firestore {
         && request.resource.data.slug == postId
         && (
           isAdmin()
-          || (resource.data.authorUid == request.auth.uid && request.resource.data.authorUid == request.auth.uid)
-        )
-        && (
-          (canModerateBlog() && request.resource.data.status in ["DRAFT", "PUBLISHED"])
-          || (!canModerateBlog() && request.resource.data.status == "DRAFT")
+          || (
+            resource.data.authorUid == request.auth.uid 
+            && request.resource.data.authorUid == request.auth.uid
+            && (
+              canModerateBlog() 
+              || request.resource.data.status == resource.data.status
+              || request.resource.data.status == "DRAFT"
+            )
+          )
         );
       allow delete: if canDeleteBlogContent();
 

@@ -3,8 +3,8 @@
 import { getApps, initializeApp } from 'firebase/app';
 import { collection, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, type Timestamp } from 'firebase/firestore';
 import { type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Star } from 'lucide-react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Star, Pencil } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
 import { classNames, type ClassKey } from '../data/tierlist';
@@ -13,6 +13,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { translations } from '../i18n/translations';
 import relicMap from '../../hero-siege-brasil/src/relicsMap.json';
 import { CHARM_DB } from '../data/charmDb';
+import { EXTRA_SHIELDS } from '../data/extraShields';
 
 type BuildStatus = 'PENDING' | 'PUBLISHED' | 'REJECTED' | 'DRAFT';
 
@@ -76,6 +77,7 @@ type BuildDoc = {
   charms: string[] | null;
   mercenaryType: 'knight' | 'archer' | 'magister' | null;
   mercenaryGear: MercenaryGear | null;
+  skillPoints: Record<string, number> | null;
   items: string[] | null;
   flasks: Array<string | null> | null;
   itemsSlots:
@@ -241,6 +243,9 @@ function AttributePentagramIcon({ color }: { color: string }) {
 export function BuildPage() {
   const { id } = useParams();
   const { user } = useAuth();
+  const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
+  const isAdmin = !!adminEmail && !!user?.email && user.email.trim().toLowerCase() === adminEmail;
+  const navigate = useNavigate();
   const tSidebar = translations.en;
 
   const [loading, setLoading] = useState(true);
@@ -252,6 +257,13 @@ export function BuildPage() {
   const [ratingError, setRatingError] = useState<string | null>(null);
 
   const [itemCategories, setItemCategories] = useState<ItemCategoryRow[]>([]);
+  const [itemsLoaded, setItemsLoaded] = useState(0);
+  const [classSkillsData, setClassSkillsData] = useState<{
+    t1: string;
+    t2: string;
+    tree1: { id: string; name: string; icon: string; position: number; hasSubTree: boolean }[];
+    tree2: { id: string; name: string; icon: string; position: number; hasSubTree: boolean }[];
+  } | null>(null);
   const itemCacheRef = useRef<Record<string, { items: ItemRow[]; byName: Map<string, ItemRow> }>>({});
   const failedItemImageUrlsRef = useRef<Set<string>>(new Set());
 
@@ -261,6 +273,7 @@ export function BuildPage() {
       shield: ['shield', 'shields'],
       helmet: ['helmet', 'helmets'],
       body: ['body', 'armor', 'armors', 'body armor', 'bodyarmors', 'chest', 'chests', 'chestplate', 'chestplates'],
+      chest: ['body', 'armor', 'armors', 'body armor', 'bodyarmors', 'chest', 'chests', 'chestplate', 'chestplates'],
       gloves: ['glove', 'gloves'],
       boots: ['boot', 'boots'],
       belt: ['belt', 'belts'],
@@ -272,37 +285,31 @@ export function BuildPage() {
   );
 
   const getItemCategoriesForSlot = (slot: string) => {
-    if (itemCategories.length === 0) return [];
-    if (slot === 'flask') {
-      const flaskish = itemCategories
-        .map((c) => ({ raw: c, id: String(c.id || '').trim().toLowerCase(), title: String(c.title || '').trim().toLowerCase(), group: String(c.group || '').trim().toLowerCase() }))
-        .filter((c) => c.group === 'flasks' || c.id.includes('flask') || c.id.includes('potion') || c.title.includes('flask') || c.title.includes('potion'))
-        .map((c) => c.raw);
-      if (flaskish.length) return flaskish;
-    }
-    const single = findItemCategory(slot);
-    return single ? [single] : [];
-  };
+    const s = String(slot || '').trim().toLowerCase();
+    if (!s || itemCategories.length === 0) return [] as ItemCategoryRow[];
 
-  const findItemCategory = (slot: string) => {
-    const cands = (itemCategoryCandidates as any)[slot] as string[] | undefined;
-    if (!cands || itemCategories.length === 0) return null;
-    const normalized = itemCategories.map((c) => ({
-      raw: c,
-      id: String(c.id || '').trim().toLowerCase(),
-      title: String(c.title || '').trim().toLowerCase(),
-    }));
-    for (const cand of cands) {
-      const c = cand.toLowerCase();
-      const exact = normalized.find((x) => x.id === c || x.title === c);
-      if (exact) return exact.raw;
+    const candidates = itemCategoryCandidates[s as keyof typeof itemCategoryCandidates] || [s];
+    
+    // Special handling for weapons to include all weapon-like categories
+    if (s === 'weapon') {
+      const weaponHints = ['weapon', 'throwing', 'sword', 'axe', 'mace', 'dagger', 'staff', 'wand', 'bow', 'crossbow', 'spear', 'scythe', 'gun', 'pistol', 'rifle', 'shotgun', 'cannon', 'katana', 'claw', 'hammer'];
+      return itemCategories.filter((c) => {
+        const id = String(c.id || '').toLowerCase();
+        const title = String(c.title || '').toLowerCase();
+        const group = String(c.group || '').toLowerCase();
+        const hay = `${id} ${title} ${group}`.trim();
+        return group === 'weapons' || weaponHints.some((h) => hay.includes(h)) || candidates.some((cand) => hay.includes(cand));
+      });
     }
-    for (const cand of cands) {
-      const c = cand.toLowerCase();
-      const partial = normalized.find((x) => x.id.includes(c) || x.title.includes(c));
-      if (partial) return partial.raw;
-    }
-    return null;
+
+    // Default filtering for all other slots (including shield, body, flask, etc.)
+    return itemCategories.filter((c) => {
+      const id = String(c.id || '').toLowerCase();
+      const title = String(c.title || '').toLowerCase();
+      const group = String(c.group || '').toLowerCase();
+      const hay = `${id} ${title} ${group}`.trim();
+      return candidates.some((cand) => hay.includes(cand));
+    });
   };
 
   const ITEM_FALLBACK_ICON = 'https://herosiege.wiki.gg/images/Item_Chest.png';
@@ -326,6 +333,14 @@ export function BuildPage() {
   const getItemImageForSlot = (slot: string, name: string) => {
     const n = String(name || '').trim();
     if (!n) return ITEM_FALLBACK_ICON;
+    const slotLc = slot.toLowerCase();
+
+    // Check EXTRA_SHIELDS first for shield slot
+    if (slotLc === 'shield') {
+      const extra = EXTRA_SHIELDS.find((s) => s.name.toLowerCase() === n.toLowerCase());
+      if (extra?.image) return extra.image;
+    }
+
     const cats = getItemCategoriesForSlot(slot);
     for (const cat of cats) {
       const cache = itemCacheRef.current[String(cat.id || '').trim().toLowerCase()];
@@ -356,7 +371,7 @@ export function BuildPage() {
     let alive = true;
     const loadCats = async () => {
       try {
-        const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories'));
+        const snap = await getDocs(collection(firestore, 'item_categories'));
         const next: ItemCategoryRow[] = [];
         for (const d of snap.docs) {
           const data = d.data() as any;
@@ -381,9 +396,39 @@ export function BuildPage() {
   }, []);
 
   useEffect(() => {
+    if (!build) return;
+    let alive = true;
+    const loadSkills = async () => {
+      try {
+        const docRef = doc(firestore, 'class_skills', build.classKey);
+        const snap = await getDoc(docRef);
+        if (!alive) return;
+        if (snap.exists()) {
+          const d = snap.data() as any;
+          setClassSkillsData({
+            t1: d.t1 || 'Tree 1',
+            t2: d.t2 || 'Tree 2',
+            tree1: d.tree1 || [],
+            tree2: d.tree2 || [],
+          });
+        } else {
+          setClassSkillsData(null);
+        }
+      } catch (err) {
+        console.error('Error loading class skills:', err);
+        if (alive) setClassSkillsData(null);
+      }
+    };
+    void loadSkills();
+    return () => {
+      alive = false;
+    };
+  }, [build?.classKey]);
+
+  useEffect(() => {
     if (!build || itemCategories.length === 0) return;
     let alive = true;
-    const slotsToPrefetch = ['weapon', 'shield', 'helmet', 'body', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'flask'] as const;
+    const slotsToPrefetch = ['weapon', 'shield', 'helmet', 'body', 'chest', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'flask'] as const;
     const loadCategoryItems = async (slot: (typeof slotsToPrefetch)[number]) => {
       const cats = getItemCategoriesForSlot(slot);
       if (!cats.length) return;
@@ -400,7 +445,7 @@ export function BuildPage() {
         })();
         let picked: ItemRow[] = [];
         for (const cid of candidates) {
-          const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories', cid, 'items'));
+          const snap = await getDocs(collection(firestore, 'item_categories', cid, 'items'));
           const items: ItemRow[] = [];
           for (const s of snap.docs) {
             const data = s.data() as Record<string, unknown>;
@@ -435,11 +480,14 @@ export function BuildPage() {
       }
     };
     const run = async () => {
-      try {
-        await Promise.all(slotsToPrefetch.map((s) => loadCategoryItems(s)));
-      } catch {
-      } finally {
-        if (!alive) return;
+      // Run individually to avoid one failure blocking everything
+      for (const slot of slotsToPrefetch) {
+        try {
+          await loadCategoryItems(slot);
+          if (alive) setItemsLoaded(v => v + 1);
+        } catch (err) {
+          console.error(`Failed to load items for slot ${slot}:`, err);
+        }
       }
     };
     void run();
@@ -476,6 +524,7 @@ export function BuildPage() {
           stats: safeBuildStats(data?.stats),
           relics: Array.isArray(data?.relics) ? (data.relics as any[]).map((r) => (safeString(r) ? safeString(r) : null)) : null,
           charms: Array.isArray(data?.charms) ? (data.charms as any[]).map((c) => safeString(c)).filter(Boolean) : null,
+          skillPoints: data?.skillPoints && typeof data.skillPoints === 'object' ? (data.skillPoints as any) : null,
           mercenaryType: safeMercenaryType(data?.mercenaryType),
           mercenaryGear: data?.mercenaryGear && typeof data.mercenaryGear === 'object'
             ? ({
@@ -676,6 +725,15 @@ export function BuildPage() {
                 </div>
               </div>
               <div className="shrink-0 flex items-center gap-2">
+                {(isAdmin || user?.uid === build?.authorUid) && (
+                  <Link
+                    to={`/forum?edit=${encodeURIComponent(build?.id || '')}`}
+                    className="inline-flex items-center justify-center gap-2 bg-brand-dark text-white px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest hover:bg-brand-darker transition-colors"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Edit
+                  </Link>
+                )}
                 {build ? (
                   <span
                     className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full border ${buildTierBadgeClasses(build.buildType)}`}
@@ -868,7 +926,7 @@ export function BuildPage() {
                             { key: 'weapon', slot: 'weapon', label: 'Weapon', value: build.mercenaryGear.weapon.trim() },
                             { key: 'shield', slot: 'shield', label: 'Shield', value: build.mercenaryGear.shield.trim() },
                             { key: 'helmet', slot: 'helmet', label: 'Helmet', value: build.mercenaryGear.helmet.trim() },
-                            { key: 'chest', slot: 'body', label: 'Chest', value: build.mercenaryGear.chest.trim() },
+                            { key: 'chest', slot: 'chest', label: 'Chest', value: build.mercenaryGear.chest.trim() },
                             { key: 'belt', slot: 'belt', label: 'Belt', value: build.mercenaryGear.belt.trim() },
                             { key: 'boots', slot: 'boots', label: 'Boots', value: build.mercenaryGear.boots.trim() },
                             { key: 'gloves', slot: 'gloves', label: 'Gloves', value: build.mercenaryGear.gloves.trim() },
@@ -893,6 +951,41 @@ export function BuildPage() {
                           })}
                       </div>
                     ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {build.skillPoints && Object.keys(build.skillPoints).length > 0 && classSkillsData ? (
+                <div className="bg-white border border-brand-dark/10 rounded-2xl p-6">
+                  <div className="font-heading font-bold uppercase tracking-widest text-brand-darker text-sm mb-4">Hero Skills</div>
+                  <div className="space-y-6">
+                    {(['tree1', 'tree2'] as const).map((tk) => {
+                      const treeSkills = classSkillsData[tk].filter((s) => (build.skillPoints as any)[s.id] > 0);
+                      if (treeSkills.length === 0) return null;
+                      return (
+                        <div key={tk} className="space-y-3">
+                          <div className="text-xs font-black uppercase tracking-widest text-brand-orange border-b border-brand-orange/10 pb-1">
+                            {classSkillsData[tk === 'tree1' ? 't1' : 't2']}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {treeSkills.map((s) => {
+                              const points = (build.skillPoints as any)[s.id];
+                              return (
+                                <div key={s.id} className="flex items-center gap-3 bg-brand-bg border border-brand-dark/5 rounded-xl p-2">
+                                  <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+                                    <img src={s.icon} alt={s.name} className="w-8 h-8 object-contain pixelated" onError={(e) => (e.currentTarget.src = '/images/herosiege.png')} />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-bold text-brand-darker truncate leading-none mb-1">{s.name}</div>
+                                    <div className="text-[10px] font-black text-brand-orange uppercase">{points} Points</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -950,6 +1043,30 @@ export function BuildPage() {
                         );
                       })
                       .filter(Boolean)}
+
+                    {build.flasks && build.flasks.some(v => v) && (
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Flasks</div>
+                        <div className="flex flex-wrap gap-2">
+                          {build.flasks.map((v, i) => {
+                            const name = String(v ?? '').trim();
+                            if (!name) return null;
+                            const img = getItemImageForSlot('flask', name);
+                            return (
+                              <div key={i} className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-2 py-1 text-[11px]">
+                                <img
+                                  src={img}
+                                  alt={name}
+                                  className="w-5 h-5 object-contain pixelated"
+                                  onError={onItemImageError}
+                                />
+                                <span className="text-brand-darker/80 font-bold">{name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : null}

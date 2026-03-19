@@ -3539,6 +3539,7 @@ export default function App() {
       <Route path="/blog/editor" element={<BlogEditorPage />} />
       <Route path="/blog/:slug" element={<BlogPostPage />} />
       <Route path="/forum" element={<ForumPage />} />
+      <Route path="/forum/:classKey" element={<ForumPage />} />
       <Route path="/build/:id" element={<BuildPage />} />
       <Route
         path="/contact"

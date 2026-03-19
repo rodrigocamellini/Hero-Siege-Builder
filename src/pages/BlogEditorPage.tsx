@@ -411,7 +411,7 @@ export function BlogEditorPage() {
                           onClick={() => void openEdit(p.id)}
                           className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker disabled:opacity-50"
                           title="Edit"
-                          disabled={!isAdmin && (p.authorUid !== user?.uid || p.status !== 'DRAFT')}
+                          disabled={!isAdmin && p.authorUid !== user?.uid}
                         >
                           <Pencil className="w-4 h-4" />
                         </button>

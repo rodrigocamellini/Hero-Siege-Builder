@@ -1,8 +1,49 @@
+'use client';
+
 import { FirebaseError, getApps, initializeApp } from 'firebase/app';
-import { addDoc, collection, getCountFromServer, getDocs, getFirestore, limit, orderBy, query, serverTimestamp, where, type Timestamp } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  getCountFromServer,
+  getDocs,
+  getFirestore,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+  getDoc,
+  doc,
+  setDoc,
+  type Timestamp,
+} from 'firebase/firestore';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Bold, Check, Code, Info, Italic, Link2, List, ListOrdered, Pin, Plus, Quote, Star, Underline, X, Heart, Zap, Skull, Shield, Flame } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Bold,
+  Check,
+  Code,
+  Info,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  Pin,
+  Plus,
+  Quote,
+  Star,
+  Underline,
+  X,
+  Heart,
+  Zap,
+  Skull,
+  Shield,
+  Flame,
+  Pencil,
+  Filter,
+  ChevronRight,
+  Circle,
+} from 'lucide-react';
 import { Modal } from '../components/Modal';
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
@@ -15,8 +56,18 @@ import { CHARM_DB } from '../data/charmDb';
 import { EXTRA_SHIELDS } from '../data/extraShields';
 
 type BuildStatus = 'PENDING' | 'PUBLISHED' | 'REJECTED' | 'DRAFT';
+type BuildTier = 'starterGame' | 'midGame' | 'endGame';
 
-type BuildRow = {
+interface BuildStats {
+  strength: number;
+  dexterity: number;
+  intelligence: number;
+  energy: number;
+  armor: number;
+  vitality: number;
+}
+
+interface BuildRow {
   id: string;
   title: string;
   excerpt: string | null;
@@ -32,18 +83,7 @@ type BuildRow = {
   ratingCount: number;
   publishedAt: Timestamp | null;
   createdAt: Timestamp | null;
-};
-
-type BuildTier = 'starterGame' | 'midGame' | 'endGame';
-
-type BuildStats = {
-  strength: number;
-  dexterity: number;
-  intelligence: number;
-  energy: number;
-  armor: number;
-  vitality: number;
-};
+}
 
 type ItemCategoryRow = {
   id: string;
@@ -80,13 +120,17 @@ function safeClassKey(v: unknown): ClassKey {
   return (classKeys as readonly string[]).includes(raw) ? (raw as ClassKey) : 'viking';
 }
 
+function safeBuildTier(v: unknown): BuildTier {
+  const raw = typeof v === 'string' ? v : '';
+  return raw === 'starterGame' || raw === 'midGame' || raw === 'endGame' ? raw : 'starterGame';
+}
+
 function firestoreErrorMessage(err: unknown) {
   if (err instanceof Error && err.message) return err.message;
-  const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
-  if (code === 'permission-denied') return 'Permissão negada no Firestore.';
-  if (code === 'unauthenticated') return 'Você precisa estar logado.';
-  if (code === 'unavailable') return 'Firestore indisponível. Tente novamente.';
-  return code ? `Erro: ${code}` : 'Falha no Firestore.';
+  const code = (err as any)?.code;
+  if (code === 'permission-denied') return 'Permission denied.';
+  if (code === 'unauthenticated') return 'You need to be signed in.';
+  return 'Database error. Please try again.';
 }
 
 const heroSiegeBrasilFirebaseConfig = {
@@ -132,9 +176,9 @@ function totalNbStats(stats: BuildStats) {
 }
 
 function buildTierLabel(tier: BuildTier) {
-  if (tier === 'starterGame') return 'StarterGame';
-  if (tier === 'midGame') return 'MidGame';
-  return 'EndGame';
+  if (tier === 'starterGame') return 'Starter Game';
+  if (tier === 'midGame') return 'Mid Game';
+  return 'End Game';
 }
 
 function buildTierBadgeClasses(tier: BuildTier) {
@@ -143,33 +187,10 @@ function buildTierBadgeClasses(tier: BuildTier) {
   return 'bg-red-50 border-red-200 text-red-900';
 }
 
-function safeBuildTier(v: unknown): BuildTier {
-  const raw = typeof v === 'string' ? v : '';
-  return raw === 'starterGame' || raw === 'midGame' || raw === 'endGame' ? raw : 'starterGame';
-}
-
-function safeTimestampToDate(ts: Timestamp | null) {
-  if (!ts) return null;
-  const anyTs = ts as any;
-  if (typeof anyTs?.toDate === 'function') return anyTs.toDate() as Date;
-  if (typeof anyTs?.seconds === 'number') return new Date(anyTs.seconds * 1000);
-  return null;
-}
-
 function formatTimestamp(ts: Timestamp | null) {
-  const d = safeTimestampToDate(ts);
-  if (!d) return '';
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(d);
-  } catch {
-    return d.toLocaleString();
-  }
+  if (!ts) return null;
+  const d = ts.toDate();
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function AttributePentagramIcon({ color }: { color: string }) {
@@ -189,29 +210,38 @@ function AttributePentagramIcon({ color }: { color: string }) {
 
 export function ForumPage() {
   const { user, profile } = useAuth();
+  const { classKey: pathClassKey } = useParams<{ classKey?: string }>();
+  const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
+  const isAdmin = !!adminEmail && !!user?.email && user.email.trim().toLowerCase() === adminEmail;
   const tSidebar = translations.en;
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [tab, setTab] = useState<'LATEST' | 'TOP'>('LATEST');
-  const [selectedClass, setSelectedClass] = useState<ClassKey | 'ALL'>(() => {
-    const raw = searchParams.get('class');
-    if (raw && (classKeys as readonly string[]).includes(raw)) return raw as ClassKey;
+  // Settings & Tabs
+  const tab = (searchParams.get('tab') as 'LATEST' | 'TOP') || 'LATEST';
+  const selectedClass = useMemo<ClassKey | 'ALL'>(() => {
+    if (pathClassKey && (classKeys as readonly string[]).includes(pathClassKey)) return pathClassKey as ClassKey;
     return 'ALL';
-  });
+  }, [pathClassKey]);
 
+  // Content state
   const [builds, setBuilds] = useState<BuildRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Counts state
   const [countsLoading, setCountsLoading] = useState(true);
-  const [countsError, setCountsError] = useState<string | null>(null);
   const [totalPublishedCount, setTotalPublishedCount] = useState<number | null>(null);
   const [publishedCountByClass, setPublishedCountByClass] = useState<Record<string, number>>({});
 
+  // Modal / Form state
   const [newBuildOpen, setNewBuildOpen] = useState(false);
+  const [editingBuildId, setEditingBuildId] = useState<string | null>(null);
   const [submitOk, setSubmitOk] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Build fields
   const [nbTitle, setNbTitle] = useState('');
   const [nbClass, setNbClass] = useState<ClassKey>('viking');
   const [nbType, setNbType] = useState<BuildTier>('starterGame');
@@ -233,15 +263,7 @@ export function ForumPage() {
   const [activeCharmSlot, setActiveCharmSlot] = useState<number | null>(null);
   const [charmSearch, setCharmSearch] = useState('');
   const [nbMercenaryType, setNbMercenaryType] = useState<'knight' | 'archer' | 'magister' | ''>('');
-  const [nbMercenaryGear, setNbMercenaryGear] = useState<{
-    weapon: string;
-    shield: string;
-    helmet: string;
-    chest: string;
-    belt: string;
-    boots: string;
-    gloves: string;
-  }>({
+  const [nbMercenaryGear, setNbMercenaryGear] = useState({
     weapon: '',
     shield: '',
     helmet: '',
@@ -250,40 +272,7 @@ export function ForumPage() {
     boots: '',
     gloves: '',
   });
-  const [nbItems, setNbItems] = useState<{
-    weaponBis: string;
-    weaponOpt1: string;
-    weaponOpt2: string;
-    shieldBis: string;
-    shieldOpt1: string;
-    shieldOpt2: string;
-    helmetBis: string;
-    helmetOpt1: string;
-    helmetOpt2: string;
-    bodyBis: string;
-    bodyOpt1: string;
-    bodyOpt2: string;
-    glovesBis: string;
-    glovesOpt1: string;
-    glovesOpt2: string;
-    bootsBis: string;
-    bootsOpt1: string;
-    bootsOpt2: string;
-    beltBis: string;
-    beltOpt1: string;
-    beltOpt2: string;
-    amuletBis: string;
-    amuletOpt1: string;
-    amuletOpt2: string;
-    ringLeftBis: string;
-    ringRightBis: string;
-    ringOpt1: string;
-    ringOpt2: string;
-    flask1: string;
-    flask2: string;
-    flask3: string;
-    flask4: string;
-  }>({
+  const [nbItems, setNbItems] = useState({
     weaponBis: '',
     weaponOpt1: '',
     weaponOpt2: '',
@@ -317,6 +306,18 @@ export function ForumPage() {
     flask3: '',
     flask4: '',
   });
+
+  // Skill Trees state
+  const [nbSkillPoints, setNbSkillPoints] = useState<Record<string, number>>({});
+  const [classSkillsData, setClassSkillsData] = useState<{
+    t1: string;
+    t2: string;
+    tree1: { id: string; name: string; icon: string; position: number; hasSubTree: boolean }[];
+    tree2: { id: string; name: string; icon: string; position: number; hasSubTree: boolean }[];
+  } | null>(null);
+  const [classSkillsLoading, setClassSkillsLoading] = useState(false);
+
+  // Item Picker
   const [itemCategories, setItemCategories] = useState<ItemCategoryRow[]>([]);
   const itemCacheRef = useRef<Record<string, { items: ItemRow[]; byName: Map<string, ItemRow> }>>({});
   const [activeItemPick, setActiveItemPick] = useState<{ target: 'items' | 'merc'; field: string; slot: string; label: string } | null>(null);
@@ -324,42 +325,409 @@ export function ForumPage() {
   const [itemLoading, setItemLoading] = useState(false);
   const [itemOptions, setItemOptions] = useState<ItemRow[]>([]);
 
-  const relicOptions = useMemo(() => {
-    const map = relicMap as Record<string, string>;
-    const uniqueByLower = new Map<string, string>();
-    for (const k of Object.keys(map)) {
-      const raw = String(k ?? '').trim();
-      if (!raw) continue;
-      const lower = raw.toLowerCase();
-      const prefer = raw !== lower;
-      if (!uniqueByLower.has(lower) || prefer) uniqueByLower.set(lower, raw);
+  // Memoized data
+  const liveNick = profile?.nick || user?.email?.split('@')[0] || 'Unknown';
+  const livePhotoURL = profile?.photoURL || user?.photoURL || null;
+
+  const pageTitle = selectedClass === 'ALL' ? 'Build Forum | Hero Siege Builder' : `${classNames[selectedClass]} Builds | Hero Siege Builder`;
+  const pageDescription =
+    selectedClass === 'ALL'
+      ? 'Browse and share community-made Hero Siege builds.'
+      : `Explore the best ${classNames[selectedClass]} builds for Hero Siege. Filter by tier and rating.`;
+
+  const structuredData = useMemo(() => {
+    const baseUrl = String(import.meta.env.VITE_SITE_URL || 'https://www.herosiegebuilder.com').replace(/\/+$/, '');
+    return [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'WebPage',
+        name: pageTitle,
+        description: pageDescription,
+        url: `${baseUrl}/forum${selectedClass === 'ALL' ? '' : `/${selectedClass}`}`,
+      },
+    ];
+  }, [pageTitle, pageDescription, selectedClass]);
+
+  // --- Effects ---
+
+  // Load class counts once
+  useEffect(() => {
+    const loadCounts = async () => {
+      setCountsLoading(true);
+      try {
+        const totalSnap = await getCountFromServer(query(collection(firestore, 'builds'), where('status', '==', 'PUBLISHED')));
+        setTotalPublishedCount(totalSnap.data().count);
+
+        const entries = await Promise.all(
+          classKeys.map(async (k) => {
+            const snap = await getCountFromServer(
+              query(collection(firestore, 'builds'), where('status', '==', 'PUBLISHED'), where('classKey', '==', k)),
+            );
+            return [k, snap.data().count] as const;
+          }),
+        );
+        setPublishedCountByClass(Object.fromEntries(entries));
+      } catch {
+        // Silently fail counts
+      } finally {
+        setCountsLoading(false);
+      }
+    };
+    void loadCounts();
+  }, []);
+
+  // Load builds when class or tab changes
+  useEffect(() => {
+    const loadBuilds = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const constraints: any[] = [
+          where('status', '==', 'PUBLISHED'),
+          tab === 'TOP' ? orderBy('ratingAvg', 'desc') : orderBy('publishedAt', 'desc'),
+          limit(50),
+        ];
+        if (tab === 'TOP') constraints.splice(2, 0, orderBy('ratingCount', 'desc'));
+        if (selectedClass !== 'ALL') constraints.unshift(where('classKey', '==', selectedClass));
+
+        const snap = await getDocs(query(collection(firestore, 'builds'), ...constraints));
+        const rows = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            title: safeString(data?.title) || d.id,
+            excerpt: safeString(data?.excerpt) || null,
+            content: safeString(data?.content) || null,
+            classKey: safeClassKey(data?.classKey),
+            authorUid: safeString(data?.authorUid) || 'unknown',
+            authorNick: safeString(data?.authorNick) || null,
+            authorPhotoURL: safeString(data?.authorPhotoURL) || null,
+            buildType: safeBuildTier(data?.buildType),
+            status: (safeString(data?.status).toUpperCase() as BuildStatus) || 'PUBLISHED',
+            featured: safeBoolean(data?.featured),
+            ratingAvg: safeNumber(data?.ratingAvg),
+            ratingCount: safeNumber(data?.ratingCount),
+            publishedAt: (data?.publishedAt as Timestamp) ?? null,
+            createdAt: (data?.createdAt as Timestamp) ?? null,
+          } satisfies BuildRow;
+        });
+        setBuilds(rows);
+      } catch (e: any) {
+        if (isIndexError(e)) {
+          // Fallback simple query
+          try {
+            const baseConstraints: any[] = [where('status', '==', 'PUBLISHED')];
+            if (selectedClass !== 'ALL') baseConstraints.unshift(where('classKey', '==', selectedClass));
+            const snap = await getDocs(query(collection(firestore, 'builds'), ...baseConstraints, limit(100)));
+            const rows = snap.docs.map((d) => {
+              const data = d.data() as any;
+              return {
+                id: d.id,
+                title: safeString(data?.title) || d.id,
+                excerpt: safeString(data?.excerpt) || null,
+                content: safeString(data?.content) || null,
+                classKey: safeClassKey(data?.classKey),
+                authorUid: safeString(data?.authorUid) || 'unknown',
+                authorNick: safeString(data?.authorNick) || null,
+                authorPhotoURL: safeString(data?.authorPhotoURL) || null,
+                buildType: safeBuildTier(data?.buildType),
+                status: (safeString(data?.status).toUpperCase() as BuildStatus) || 'PUBLISHED',
+                featured: safeBoolean(data?.featured),
+                ratingAvg: safeNumber(data?.ratingAvg),
+                ratingCount: safeNumber(data?.ratingCount),
+                publishedAt: (data?.publishedAt as Timestamp) ?? null,
+                createdAt: (data?.createdAt as Timestamp) ?? null,
+              } satisfies BuildRow;
+            });
+            // Sort client-side
+            rows.sort((a, b) => {
+              if (tab === 'TOP') return b.ratingAvg - a.ratingAvg || b.ratingCount - a.ratingCount;
+              return (b.publishedAt?.toMillis() ?? 0) - (a.publishedAt?.toMillis() ?? 0);
+            });
+            setBuilds(rows.slice(0, 50));
+          } catch (err2) {
+            setError(firestoreErrorMessage(err2));
+          }
+        } else {
+          setError(firestoreErrorMessage(e));
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    void loadBuilds();
+  }, [selectedClass, tab]);
+
+  // Handle Edit Link once
+  const didCheckEdit = useRef(false);
+  useEffect(() => {
+    if (didCheckEdit.current) return;
+    const editId = searchParams.get('edit');
+    if (editId && user) {
+      didCheckEdit.current = true;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('edit');
+          return next;
+        },
+        { replace: true },
+      );
+      void openEditBuild(editId);
     }
-    return Array.from(uniqueByLower.values()).sort((a, b) => a.localeCompare(b));
-  }, []);
+  }, [searchParams, user, setSearchParams]);
 
-  const charmOptions = useMemo(() => {
-    const names = CHARM_DB.map((c) => String(c?.name ?? '')).filter(Boolean);
-    names.sort((a, b) => a.localeCompare(b));
-    return names;
-  }, []);
+  // Load Item Categories once
+  useEffect(() => {
+    if (!newBuildOpen || itemCategories.length > 0) return;
+    const loadCats = async () => {
+      try {
+        const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories'));
+        const cats = snap.docs.map((s) => {
+          const d = s.data() as any;
+          return { id: s.id, title: d.title, group: d.group, order: d.order } satisfies ItemCategoryRow;
+        });
+        cats.sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || (a.title || a.id).localeCompare(b.title || b.id));
+        setItemCategories(cats);
+      } catch {
+        /* ignore */
+      }
+    };
+    void loadCats();
+  }, [newBuildOpen, itemCategories.length]);
 
-  const charmByName = useMemo(() => {
-    const map = new Map<string, (typeof CHARM_DB)[number]>();
-    for (const c of CHARM_DB) map.set(String(c?.name ?? ''), c);
-    return map;
-  }, []);
+  // Load class skills when class changes in modal
+  useEffect(() => {
+    if (!newBuildOpen) return;
+    let alive = true;
+    const loadSkills = async () => {
+      setClassSkillsLoading(true);
+      try {
+        const docRef = doc(firestore, 'class_skills', nbClass);
+        const snap = await getDoc(docRef);
+        if (!alive) return;
+        if (snap.exists()) {
+          const d = snap.data() as any;
+          setClassSkillsData({
+            t1: d.t1 || 'Tree 1',
+            t2: d.t2 || 'Tree 2',
+            tree1: d.tree1 || [],
+            tree2: d.tree2 || [],
+          });
+        } else {
+          setClassSkillsData(null);
+        }
+      } catch (err) {
+        console.error('Error loading class skills:', err);
+        if (alive) setClassSkillsData(null);
+      } finally {
+        if (alive) setClassSkillsLoading(false);
+      }
+    };
+    void loadSkills();
+    return () => {
+      alive = false;
+    };
+  }, [nbClass, newBuildOpen]);
 
-  const filteredCharmOptions = useMemo(() => {
-    const q = charmSearch.trim().toLowerCase();
-    if (!q) return charmOptions.slice(0, 300);
-    return charmOptions.filter((n) => n.toLowerCase().includes(q)).slice(0, 300);
-  }, [charmOptions, charmSearch]);
+  // --- Functions ---
 
-  const filteredRelicOptions = useMemo(() => {
-    const q = relicSearch.trim().toLowerCase();
-    if (!q) return relicOptions.slice(0, 300);
-    return relicOptions.filter((n) => n.toLowerCase().includes(q)).slice(0, 300);
-  }, [relicOptions, relicSearch]);
+  const openNewBuild = () => {
+    setEditingBuildId(null);
+    setSubmitOk(false);
+    setSubmitError(null);
+    setNbTitle('');
+    setNbExcerpt('');
+    setNbContent('');
+    setNbClass(selectedClass === 'ALL' ? 'viking' : selectedClass);
+    setNbType('starterGame');
+    setNbStats({ strength: 0, dexterity: 0, intelligence: 0, energy: 0, armor: 0, vitality: 0 });
+    setNbRelics([null, null, null, null, null]);
+    setNbCharms([]);
+    setNbSkillPoints({});
+    setNbMercenaryType('');
+    setNbMercenaryGear({ weapon: '', shield: '', helmet: '', chest: '', belt: '', boots: '', gloves: '' });
+    setNbItems({
+      weaponBis: '',
+      weaponOpt1: '',
+      weaponOpt2: '',
+      shieldBis: '',
+      shieldOpt1: '',
+      shieldOpt2: '',
+      helmetBis: '',
+      helmetOpt1: '',
+      helmetOpt2: '',
+      bodyBis: '',
+      bodyOpt1: '',
+      bodyOpt2: '',
+      glovesBis: '',
+      glovesOpt1: '',
+      glovesOpt2: '',
+      bootsBis: '',
+      bootsOpt1: '',
+      bootsOpt2: '',
+      beltBis: '',
+      beltOpt1: '',
+      beltOpt2: '',
+      amuletBis: '',
+      amuletOpt1: '',
+      amuletOpt2: '',
+      ringLeftBis: '',
+      ringRightBis: '',
+      ringOpt1: '',
+      ringOpt2: '',
+      flask1: '',
+      flask2: '',
+      flask3: '',
+      flask4: '',
+    });
+    setNewBuildOpen(true);
+  };
+
+  const openEditBuild = async (id: string) => {
+    setSubmitOk(false);
+    setSubmitError(null);
+    try {
+      const snap = await getDoc(doc(firestore, 'builds', id));
+      if (!snap.exists()) {
+        setSubmitError('Build not found.');
+        return;
+      }
+      const data = snap.data() as any;
+      if (!isAdmin && data.authorUid !== user?.uid) {
+        setSubmitError('Unauthorized.');
+        return;
+      }
+
+      setEditingBuildId(id);
+      setNbTitle(data.title || '');
+      setNbExcerpt(data.excerpt || '');
+      setNbContent(data.content || '');
+      setNbClass(data.classKey || 'viking');
+      setNbType(data.buildType || 'starterGame');
+      setNbStats({
+        strength: data.stats?.strength || 0,
+        dexterity: data.stats?.dexterity || 0,
+        intelligence: data.stats?.intelligence || 0,
+        energy: data.stats?.energy || 0,
+        armor: data.stats?.armor || 0,
+        vitality: data.stats?.vitality || 0,
+      });
+      setNbRelics(Array.isArray(data.relics) ? data.relics : [null, null, null, null, null]);
+      setNbCharms(Array.isArray(data.charms) ? data.charms : []);
+      setNbSkillPoints(data.skillPoints || {});
+      setNbMercenaryType(data.mercenaryType || '');
+      setNbMercenaryGear({
+        weapon: data.mercenaryGear?.weapon || '',
+        shield: data.mercenaryGear?.shield || '',
+        helmet: data.mercenaryGear?.helmet || '',
+        chest: data.mercenaryGear?.chest || '',
+        belt: data.mercenaryGear?.belt || '',
+        boots: data.mercenaryGear?.boots || '',
+        gloves: data.mercenaryGear?.gloves || '',
+      });
+
+      const adv = data.itemsAdvanced || {};
+      setNbItems({
+        weaponBis: adv.weapon?.bis || '',
+        weaponOpt1: adv.weapon?.opt1 || '',
+        weaponOpt2: adv.weapon?.opt2 || '',
+        shieldBis: adv.shield?.bis || '',
+        shieldOpt1: adv.shield?.opt1 || '',
+        shieldOpt2: adv.shield?.opt2 || '',
+        helmetBis: adv.helmet?.bis || '',
+        helmetOpt1: adv.helmet?.opt1 || '',
+        helmetOpt2: adv.helmet?.opt2 || '',
+        bodyBis: adv.body?.bis || '',
+        bodyOpt1: adv.body?.opt1 || '',
+        bodyOpt2: adv.body?.opt2 || '',
+        glovesBis: adv.gloves?.bis || '',
+        glovesOpt1: adv.gloves?.opt1 || '',
+        glovesOpt2: adv.gloves?.opt2 || '',
+        bootsBis: adv.boots?.bis || '',
+        bootsOpt1: adv.boots?.opt1 || '',
+        bootsOpt2: adv.boots?.opt2 || '',
+        beltBis: adv.belt?.bis || '',
+        beltOpt1: adv.belt?.opt1 || '',
+        beltOpt2: adv.belt?.opt2 || '',
+        amuletBis: adv.amulet?.bis || '',
+        amuletOpt1: adv.amulet?.opt1 || '',
+        amuletOpt2: adv.amulet?.opt2 || '',
+        ringLeftBis: adv.ring?.leftBis || '',
+        ringRightBis: adv.ring?.rightBis || '',
+        ringOpt1: adv.ring?.opt1 || '',
+        ringOpt2: adv.ring?.opt2 || '',
+        flask1: data.flasks?.[0] || '',
+        flask2: data.flasks?.[1] || '',
+        flask3: data.flasks?.[2] || '',
+        flask4: data.flasks?.[3] || '',
+      });
+
+      setNewBuildOpen(true);
+    } catch (e: any) {
+      setSubmitError(firestoreErrorMessage(e));
+    }
+  };
+
+  const submitBuild = async () => {
+    if (!user) return;
+    setSubmitError(null);
+    if (!nbTitle.trim()) return setSubmitError('Title is required.');
+    setSubmitting(true);
+    try {
+      const payload: any = {
+        title: nbTitle.trim(),
+        excerpt: nbExcerpt.trim() || null,
+        content: nbContent.trim() || null,
+        classKey: nbClass,
+        className: classNames[nbClass],
+        buildType: nbType,
+        stats: nbStats,
+        relics: nbRelics.map((r) => (r ? String(r).trim() : null)),
+        charms: nbCharms.map((c) => String(c).trim()).filter(Boolean),
+        skillPoints: nbSkillPoints,
+        mercenaryType: nbMercenaryType || null,
+        mercenaryGear: nbMercenaryType ? nbMercenaryGear : null,
+        itemsAdvanced: {
+          weapon: { bis: nbItems.weaponBis, opt1: nbItems.weaponOpt1, opt2: nbItems.weaponOpt2 },
+          shield: { bis: nbItems.shieldBis, opt1: nbItems.shieldOpt1, opt2: nbItems.shieldOpt2 },
+          helmet: { bis: nbItems.helmetBis, opt1: nbItems.helmetOpt1, opt2: nbItems.helmetOpt2 },
+          body: { bis: nbItems.bodyBis, opt1: nbItems.bodyOpt1, opt2: nbItems.bodyOpt2 },
+          gloves: { bis: nbItems.glovesBis, opt1: nbItems.glovesOpt1, opt2: nbItems.glovesOpt2 },
+          boots: { bis: nbItems.bootsBis, opt1: nbItems.bootsOpt1, opt2: nbItems.bootsOpt2 },
+          belt: { bis: nbItems.beltBis, opt1: nbItems.beltOpt1, opt2: nbItems.beltOpt2 },
+          amulet: { bis: nbItems.amuletBis, opt1: nbItems.amuletOpt1, opt2: nbItems.amuletOpt2 },
+          ring: { leftBis: nbItems.ringLeftBis, rightBis: nbItems.ringRightBis, opt1: nbItems.ringOpt1, opt2: nbItems.ringOpt2 },
+        },
+        flasks: [nbItems.flask1, nbItems.flask2, nbItems.flask3, nbItems.flask4].map((v) => v || null),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingBuildId) {
+        await setDoc(doc(firestore, 'builds', editingBuildId), payload, { merge: true });
+      } else {
+        await addDoc(collection(firestore, 'builds'), {
+          ...payload,
+          authorUid: user.uid,
+          authorNick: liveNick,
+          authorPhotoURL: livePhotoURL,
+          status: 'PENDING',
+          featured: false,
+          ratingAvg: 0,
+          ratingCount: 0,
+          ratingSum: 0,
+          createdAt: serverTimestamp(),
+          publishedAt: null,
+        });
+      }
+      setSubmitOk(true);
+      setNewBuildOpen(false);
+    } catch (e) {
+      setSubmitError(firestoreErrorMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const itemCategoryCandidates = useMemo(
     () => ({
@@ -367,6 +735,7 @@ export function ForumPage() {
       shield: ['shield', 'shields'],
       helmet: ['helmet', 'helmets'],
       body: ['body', 'armor', 'armors', 'body armor', 'bodyarmors', 'chest', 'chests', 'chestplate', 'chestplates'],
+      chest: ['body', 'armor', 'armors', 'body armor', 'bodyarmors', 'chest', 'chests', 'chestplate', 'chestplates'],
       gloves: ['glove', 'gloves'],
       boots: ['boot', 'boots'],
       belt: ['belt', 'belts'],
@@ -409,28 +778,7 @@ export function ForumPage() {
       group: String(c.group || '').trim().toLowerCase(),
     }));
     if (s === 'weapon') {
-      const weaponHints = [
-        'weapon',
-        'throwing',
-        'sword',
-        'axe',
-        'mace',
-        'dagger',
-        'staff',
-        'wand',
-        'bow',
-        'crossbow',
-        'spear',
-        'scythe',
-        'gun',
-        'pistol',
-        'rifle',
-        'shotgun',
-        'cannon',
-        'katana',
-        'claw',
-        'hammer',
-      ];
+      const weaponHints = ['weapon', 'throwing', 'sword', 'axe', 'mace', 'dagger', 'staff', 'wand', 'bow', 'crossbow', 'spear', 'scythe', 'gun', 'pistol', 'rifle', 'shotgun', 'cannon', 'katana', 'claw', 'hammer'];
       const weaponish = normalized
         .filter((c) => {
           if (c.group === 'weapons') return true;
@@ -454,15 +802,6 @@ export function ForumPage() {
     return single ? [single] : [];
   };
 
-  const filteredItemOptions = useMemo(() => {
-    const q = itemSearch.trim().toLowerCase();
-    const list = itemOptions;
-    if (!q) return list.slice(0, 400);
-    return list.filter((it) => String(it.name || '').toLowerCase().includes(q)).slice(0, 400);
-  }, [itemOptions, itemSearch]);
-
-  const ITEM_FALLBACK_ICON = 'https://herosiege.wiki.gg/images/Item_Chest.png';
-
   const normalizeItemImageUrl = (raw: unknown) => {
     const v = safeString(raw);
     if (!v) return '';
@@ -482,13 +821,53 @@ export function ForumPage() {
   const getItemImageForSlot = (slot: string, name: string) => {
     const n = String(name || '').trim();
     if (!n) return '';
+    const slotLc = slot.toLowerCase();
+    
+    // Check EXTRA_SHIELDS first for shield slot
+    if (slotLc === 'shield') {
+      const extra = EXTRA_SHIELDS.find(s => s.name.toLowerCase() === n.toLowerCase());
+      if (extra?.image) return extra.image;
+    }
+
     const cats = resolveItemCategoriesForSlot(slot);
     for (const cat of cats) {
       const cache = itemCacheRef.current[String(cat.id || '').trim().toLowerCase()];
       const row = cache?.byName.get(n.toLowerCase());
-      if (row) return getItemImage(row) || ITEM_FALLBACK_ICON;
+      if (row) return getItemImage(row) || 'https://herosiege.wiki.gg/images/Item_Chest.png';
     }
-    return ITEM_FALLBACK_ICON;
+    return 'https://herosiege.wiki.gg/images/Item_Chest.png';
+  };
+
+  const applyPickedItem = (value: string) => {
+    if (!activeItemPick) return;
+    if (activeItemPick.target === 'merc') {
+      setNbMercenaryGear((g) => ({ ...g, [activeItemPick.field]: value }));
+    } else {
+      setNbItems((i) => ({ ...i, [activeItemPick.field]: value }));
+    }
+    setActiveItemPick(null);
+    setItemSearch('');
+  };
+
+  const handleSkillPointChange = (skillId: string, delta: number) => {
+    setNbSkillPoints((prev) => {
+      const currentPoints = prev[skillId] || 0;
+      const totalSpent = Object.values(prev).reduce((acc, p) => acc + p, 0);
+      
+      // If adding points, check total limit (100) and per-skill limit (20)
+      if (delta > 0) {
+        if (totalSpent >= 100) return prev;
+        if (currentPoints >= 20) return prev;
+      }
+      
+      const next = Math.max(0, Math.min(20, currentPoints + delta));
+      
+      if (next === 0) {
+        const { [skillId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [skillId]: next };
+    });
   };
 
   useEffect(() => {
@@ -501,14 +880,7 @@ export function ForumPage() {
     const cats = resolveItemCategoriesForSlot(slot);
     if (cats.length === 0) {
       if (slotLc === 'shield') {
-        setItemOptions(
-          EXTRA_SHIELDS.map((s) => ({
-            id: s.id,
-            name: s.name,
-            rarity: s.rarity,
-            image: s.image,
-          })),
-        );
+        setItemOptions(EXTRA_SHIELDS.map((s) => ({ id: s.id, name: s.name, rarity: s.rarity, image: s.image })));
       }
       return;
     }
@@ -525,21 +897,13 @@ export function ForumPage() {
       const merged = Array.from(byName.values());
       if (slotLc === 'shield') {
         const existingNames = new Set(merged.map((it) => String(it.name || '').trim().toLowerCase()).filter(Boolean));
-        const extra = EXTRA_SHIELDS.filter((s) => !existingNames.has(String(s.name || '').trim().toLowerCase())).map((s) => ({
-          id: s.id,
-          name: s.name,
-          rarity: s.rarity,
-          image: s.image,
-        }));
+        const extra = EXTRA_SHIELDS.filter((s) => !existingNames.has(String(s.name || '').trim().toLowerCase())).map((s) => ({ id: s.id, name: s.name, rarity: s.rarity, image: s.image }));
         if (extra.length) merged.push(...extra);
       }
       merged.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
       return merged;
     };
-    const allCached = cats.every((c) => {
-      const cacheKey = String(c.id || '').trim().toLowerCase();
-      return Boolean(itemCacheRef.current[cacheKey]?.items?.length);
-    });
+    const allCached = cats.every((c) => itemCacheRef.current[String(c.id || '').trim().toLowerCase()]?.items?.length);
     if (allCached) {
       setItemOptions(mergeFromCache());
       return;
@@ -553,39 +917,17 @@ export function ForumPage() {
             if (!baseId) return;
             const cacheKey = baseId.toLowerCase();
             if (itemCacheRef.current[cacheKey]?.items?.length) return;
-            const candidates = (() => {
-              const arr = [baseId];
-              if (baseId.toLowerCase().endsWith('s')) arr.push(baseId.slice(0, -1));
-              else arr.push(baseId + 's');
-              return Array.from(new Set(arr.map((s) => s.toLowerCase())));
-            })();
+            const candidates = [baseId.toLowerCase(), baseId.toLowerCase().endsWith('s') ? baseId.toLowerCase().slice(0, -1) : baseId.toLowerCase() + 's'];
             let picked: ItemRow[] = [];
             for (const cid of candidates) {
               const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories', cid, 'items'));
-              const items: ItemRow[] = [];
-              for (const s of snap.docs) {
-                const data = s.data() as Record<string, unknown>;
-                items.push({
-                  id: s.id,
-                  name: safeString(data.name) || undefined,
-                  rarity: safeString(data.rarity) || undefined,
-                  image: safeString(data.image) || undefined,
-                  img: safeString(data.img) || undefined,
-                });
-              }
-              if (items.length > 0) {
-                picked = items;
-                break;
-              }
+              const items = snap.docs.map((s) => {
+                const d = s.data() as any;
+                return { id: s.id, name: safeString(d.name) || undefined, rarity: safeString(d.rarity) || undefined, image: safeString(d.image) || undefined, img: safeString(d.img) || undefined } satisfies ItemRow;
+              });
+              if (items.length > 0) { picked = items; break; }
             }
-            const catIdLc = baseId.toLowerCase();
-            const cleaned = picked.filter((it) => {
-              const n = String(it.name || '').trim().toLowerCase();
-              const idn = String(it.id || '').trim().toLowerCase();
-              if (!n && idn === catIdLc) return false;
-              if (n && n === catIdLc) return false;
-              return true;
-            });
+            const cleaned = picked.filter(it => (it.name || it.id).toLowerCase() !== baseId.toLowerCase());
             cleaned.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
             const byName = new Map<string, ItemRow>();
             for (const it of cleaned) {
@@ -603,443 +945,90 @@ export function ForumPage() {
       }
     };
     void load();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [activeItemPick, itemCategories]);
 
-  const applyPickedItem = (value: string) => {
-    if (!activeItemPick) return;
-    if (activeItemPick.target === 'merc') {
-      setNbMercenaryGear((g) => ({ ...g, [activeItemPick.field]: value }));
-    } else {
-      setNbItems((i) => ({ ...i, [activeItemPick.field]: value }));
-    }
-    setActiveItemPick(null);
-    setItemSearch('');
-  };
+  const filteredItemOptions = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return itemOptions.slice(0, 400);
+    return itemOptions.filter((it) => String(it.name || it.id).toLowerCase().includes(q)).slice(0, 400);
+  }, [itemOptions, itemSearch]);
 
-  const liveNick = profile?.nick?.trim() || profile?.displayName?.trim() || user?.email?.split('@')[0] || 'Unknown';
-  const livePhotoURL = profile?.photoURL || user?.photoURL || '';
+  const relicOptions = useMemo(() => {
+    const map = relicMap as Record<string, string>;
+    const unique = new Map<string, string>();
+    for (const k of Object.keys(map)) {
+      const raw = String(k ?? '').trim();
+      if (!raw) continue;
+      const lower = raw.toLowerCase();
+      if (!unique.has(lower) || raw !== lower) unique.set(lower, raw);
+    }
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }, []);
+
+  const filteredRelicOptions = useMemo(() => {
+    const q = relicSearch.trim().toLowerCase();
+    if (!q) return relicOptions.slice(0, 300);
+    return relicOptions.filter((n) => n.toLowerCase().includes(q)).slice(0, 300);
+  }, [relicOptions, relicSearch]);
+
+  const charmOptions = useMemo(() => CHARM_DB.map((c) => String(c?.name ?? '')).filter(Boolean).sort((a, b) => a.localeCompare(b)), []);
+  const charmByName = useMemo(() => {
+    const map = new Map<string, (typeof CHARM_DB)[number]>();
+    for (const c of CHARM_DB) map.set(String(c?.name ?? ''), c);
+    return map;
+  }, []);
+  const filteredCharmOptions = useMemo(() => {
+    const q = charmSearch.trim().toLowerCase();
+    if (!q) return charmOptions.slice(0, 300);
+    return charmOptions.filter((n) => n.toLowerCase().includes(q)).slice(0, 300);
+  }, [charmOptions, charmSearch]);
 
   const applyWrapToContent = (before: string, after: string, cursorShift?: { start: number; end: number }) => {
     const el = nbContentRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
     const text = nbContent;
-    const start = el ? el.selectionStart : text.length;
-    const end = el ? el.selectionEnd : text.length;
     const selected = text.slice(start, end);
     const next = `${text.slice(0, start)}${before}${selected}${after}${text.slice(end)}`;
     setNbContent(next);
-    if (!el) return;
     const nextStart = start + (cursorShift?.start ?? before.length);
     const nextEnd = end + (cursorShift?.end ?? before.length);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(nextStart, nextEnd);
-    });
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(nextStart, nextEnd); });
   };
 
   const applyPrefixToLines = (prefix: string) => {
     const el = nbContentRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
     const text = nbContent;
-    const start = el ? el.selectionStart : text.length;
-    const end = el ? el.selectionEnd : text.length;
     const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
     const lineEndIdx = text.indexOf('\n', end);
     const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx;
     const block = text.slice(lineStart, lineEnd);
-    const lines = block.split('\n');
-    const nextBlock = lines.map((l) => (l.trim() ? `${prefix}${l}` : l)).join('\n');
-    const next = `${text.slice(0, lineStart)}${nextBlock}${text.slice(lineEnd)}`;
-    setNbContent(next);
-    if (!el) return;
-    const diff = nextBlock.length - block.length;
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start + prefix.length, end + diff);
-    });
+    const nextBlock = block.split('\n').map((l) => (l.trim() ? `${prefix}${l}` : l)).join('\n');
+    setNbContent(`${text.slice(0, lineStart)}${nextBlock}${text.slice(lineEnd)}`);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + prefix.length, end + (nextBlock.length - block.length)); });
   };
 
   const insertAtCursor = (textToInsert: string) => {
     const el = nbContentRef.current;
-    const text = nbContent;
-    const start = el ? el.selectionStart : text.length;
-    const end = el ? el.selectionEnd : text.length;
-    const next = `${text.slice(0, start)}${textToInsert}${text.slice(end)}`;
-    setNbContent(next);
     if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    setNbContent(`${nbContent.slice(0, start)}${textToInsert}${nbContent.slice(end)}`);
     const nextPos = start + textToInsert.length;
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(nextPos, nextPos);
-    });
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(nextPos, nextPos); });
   };
 
-  useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (selectedClass === 'ALL') next.delete('class');
-    else next.set('class', selectedClass);
-    setSearchParams(next, { replace: true });
-  }, [searchParams, selectedClass, setSearchParams]);
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const constraints: any[] = [
-          where('status', '==', 'PUBLISHED'),
-          tab === 'TOP' ? orderBy('ratingAvg', 'desc') : orderBy('publishedAt', 'desc'),
-          limit(50),
-        ];
-        if (tab === 'TOP') constraints.splice(2, 0, orderBy('ratingCount', 'desc'));
-        if (selectedClass !== 'ALL') constraints.unshift(where('classKey', '==', selectedClass));
-
-        const snap = await getDocs(query(collection(firestore, 'builds'), ...constraints));
-        const next = snap.docs.map((d) => {
-          const data = d.data() as any;
-          return {
-            id: d.id,
-            title: safeString(data?.title) || d.id,
-            excerpt: safeString(data?.excerpt) || null,
-            content: safeString(data?.content) || null,
-            classKey: safeClassKey(data?.classKey),
-            authorUid: safeString(data?.authorUid) || 'unknown',
-            authorNick: safeString(data?.authorNick) || null,
-            authorPhotoURL: safeString(data?.authorPhotoURL) || null,
-            buildType: safeBuildTier(data?.buildType),
-            status: (safeString(data?.status).toUpperCase() as BuildStatus) || 'PUBLISHED',
-            featured: safeBoolean(data?.featured),
-            ratingAvg: safeNumber(data?.ratingAvg),
-            ratingCount: safeNumber(data?.ratingCount),
-            publishedAt: (data?.publishedAt as Timestamp) ?? null,
-            createdAt: (data?.createdAt as Timestamp) ?? null,
-          } satisfies BuildRow;
-        });
-        setBuilds(next);
-      } catch (e: any) {
-        try {
-          if (!isIndexError(e)) throw e;
-
-          const baseConstraints: any[] = [where('status', '==', 'PUBLISHED')];
-          if (selectedClass !== 'ALL') baseConstraints.unshift(where('classKey', '==', selectedClass));
-
-          const snap = await getDocs(query(collection(firestore, 'builds'), ...baseConstraints, limit(tab === 'TOP' ? 250 : 200)));
-          const next = snap.docs
-            .map((d) => {
-              const data = d.data() as any;
-              return {
-                id: d.id,
-                title: safeString(data?.title) || d.id,
-                excerpt: safeString(data?.excerpt) || null,
-                content: safeString(data?.content) || null,
-                classKey: safeClassKey(data?.classKey),
-                authorUid: safeString(data?.authorUid) || 'unknown',
-                authorNick: safeString(data?.authorNick) || null,
-                authorPhotoURL: safeString(data?.authorPhotoURL) || null,
-                buildType: safeBuildTier(data?.buildType),
-                status: (safeString(data?.status).toUpperCase() as BuildStatus) || 'PUBLISHED',
-                featured: safeBoolean(data?.featured),
-                ratingAvg: safeNumber(data?.ratingAvg),
-                ratingCount: safeNumber(data?.ratingCount),
-                publishedAt: (data?.publishedAt as Timestamp) ?? null,
-                createdAt: (data?.createdAt as Timestamp) ?? null,
-              } satisfies BuildRow;
-            })
-            .sort((a, b) => {
-              if (tab === 'TOP') {
-                if (b.ratingAvg !== a.ratingAvg) return b.ratingAvg - a.ratingAvg;
-                if (b.ratingCount !== a.ratingCount) return b.ratingCount - a.ratingCount;
-              }
-              const ap = a.publishedAt?.toMillis?.() ?? 0;
-              const bp = b.publishedAt?.toMillis?.() ?? 0;
-              return bp - ap;
-            })
-            .slice(0, 50);
-
-          setBuilds(next);
-          setError(null);
-        } catch (fallbackErr: any) {
-          setBuilds([]);
-          setError(typeof fallbackErr?.message === 'string' ? fallbackErr.message : 'Failed to load builds.');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-    void load();
-  }, [selectedClass, tab]);
-
-  useEffect(() => {
-    const loadCounts = async () => {
-      setCountsLoading(true);
-      setCountsError(null);
-      try {
-        const totalSnap = await getCountFromServer(query(collection(firestore, 'builds'), where('status', '==', 'PUBLISHED')));
-        setTotalPublishedCount(totalSnap.data().count);
-
-        const entries = await Promise.all(
-          classKeys.map(async (k) => {
-            const snap = await getCountFromServer(
-              query(collection(firestore, 'builds'), where('status', '==', 'PUBLISHED'), where('classKey', '==', k)),
-            );
-            return [k, snap.data().count] as const;
-          }),
-        );
-
-        const next: Record<string, number> = {};
-        for (const [k, c] of entries) next[k] = c;
-        setPublishedCountByClass(next);
-      } catch (e: any) {
-        setTotalPublishedCount(null);
-        setPublishedCountByClass({});
-        setCountsError(typeof e?.message === 'string' ? e.message : 'Failed to load class counts.');
-      } finally {
-        setCountsLoading(false);
-      }
-    };
-    void loadCounts();
-  }, []);
-
-  useEffect(() => {
-    if (!newBuildOpen) return;
-    if (itemCategories.length > 0) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories'));
-        const cats: ItemCategoryRow[] = [];
-        for (const s of snap.docs) {
-          const data = s.data() as Record<string, unknown>;
-          cats.push({
-            id: s.id,
-            title: safeString(data.title) || undefined,
-            image: safeString(data.image) || undefined,
-            group: safeString(data.group) || undefined,
-            order: typeof data.order === 'number' ? data.order : undefined,
-          });
-        }
-        cats.sort((a, b) => {
-          const ao = a.order ?? 999;
-          const bo = b.order ?? 999;
-          if (ao !== bo) return ao - bo;
-          return (a.title || a.id).localeCompare(b.title || b.id);
-        });
-        if (alive) setItemCategories(cats);
-      } catch {
-        if (alive) setItemCategories([]);
-      }
-    };
-    void load();
-    return () => {
-      alive = false;
-    };
-  }, [itemCategories.length, newBuildOpen]);
-
-  const pageTitle = 'Build Forum | Hero Siege Builder';
-  const pageDescription =
-    'Browse community builds by class, vote your favorites, and submit your own build for moderation.';
-  const structuredData = useMemo(() => {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin.replace(/\/+$/, '') : '';
-    return [
-      {
-        '@context': 'https://schema.org',
-        '@type': 'BreadcrumbList',
-        itemListElement: [
-          { '@type': 'ListItem', position: 1, name: 'Home', item: `${baseUrl}/` },
-          { '@type': 'ListItem', position: 2, name: 'Forum', item: `${baseUrl}/forum` },
-        ],
-      },
-      {
-        '@context': 'https://schema.org',
-        '@type': 'CollectionPage',
-        name: 'Build Forum',
-        description: pageDescription,
-        url: `${baseUrl}/forum`,
-      },
-    ];
-  }, []);
-
-  const openNewBuild = () => {
-    setSubmitOk(false);
-    setSubmitError(null);
-    setNbTitle('');
-    setNbExcerpt('');
-    setNbContent('');
-    setNbClass(selectedClass === 'ALL' ? 'viking' : selectedClass);
-    setNbType('starterGame');
-    setNbStats({ strength: 0, dexterity: 0, intelligence: 0, energy: 0, armor: 0, vitality: 0 });
-    setNbRelics([null, null, null, null, null]);
-    setNbCharms([]);
-    setActiveRelicSlot(null);
-    setRelicSearch('');
-    setNbMercenaryType('');
-    setNbMercenaryGear({ weapon: '', shield: '', helmet: '', chest: '', belt: '', boots: '', gloves: '' });
-    setNbItems({
-      weaponBis: '',
-      weaponOpt1: '',
-      weaponOpt2: '',
-      shieldBis: '',
-      shieldOpt1: '',
-      shieldOpt2: '',
-      helmetBis: '',
-      helmetOpt1: '',
-      helmetOpt2: '',
-      bodyBis: '',
-      bodyOpt1: '',
-      bodyOpt2: '',
-      glovesBis: '',
-      glovesOpt1: '',
-      glovesOpt2: '',
-      bootsBis: '',
-      bootsOpt1: '',
-      bootsOpt2: '',
-      beltBis: '',
-      beltOpt1: '',
-      beltOpt2: '',
-      amuletBis: '',
-      amuletOpt1: '',
-      amuletOpt2: '',
-      ringLeftBis: '',
-      ringRightBis: '',
-      ringOpt1: '',
-      ringOpt2: '',
-      flask1: '',
-      flask2: '',
-      flask3: '',
-      flask4: '',
+  const handleTabChange = (newTab: 'LATEST' | 'TOP') => {
+    setSearchParams((prev) => {
+      const n = new URLSearchParams(prev);
+      n.set('tab', newTab);
+      return n;
     });
-    setNewBuildOpen(true);
-  };
-
-  const submitBuild = async () => {
-    setSubmitError(null);
-    setSubmitOk(false);
-    if (!user) {
-      setSubmitError('You need to be signed in to submit a build.');
-      return;
-    }
-    const title = nbTitle.trim();
-    const excerpt = nbExcerpt.trim();
-    const content = nbContent.trim();
-    if (!title) {
-      setSubmitError('Title is required.');
-      return;
-    }
-    if (!nbClass) {
-      setSubmitError('Class is required.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const nick = profile?.nick?.trim() || profile?.displayName?.trim() || user.email?.split('@')[0] || 'Unknown';
-      const relics = nbRelics.map((r) => {
-        const v = String(r ?? '').trim();
-        return v ? v : null;
-      });
-      const charms = nbCharms.map((c) => String(c ?? '').trim()).filter(Boolean);
-      const itemsAdvanced = {
-        weapon: { bis: nbItems.weaponBis.trim(), opt1: nbItems.weaponOpt1.trim(), opt2: nbItems.weaponOpt2.trim() },
-        shield: { bis: nbItems.shieldBis.trim(), opt1: nbItems.shieldOpt1.trim(), opt2: nbItems.shieldOpt2.trim() },
-        helmet: { bis: nbItems.helmetBis.trim(), opt1: nbItems.helmetOpt1.trim(), opt2: nbItems.helmetOpt2.trim() },
-        body: { bis: nbItems.bodyBis.trim(), opt1: nbItems.bodyOpt1.trim(), opt2: nbItems.bodyOpt2.trim() },
-        gloves: { bis: nbItems.glovesBis.trim(), opt1: nbItems.glovesOpt1.trim(), opt2: nbItems.glovesOpt2.trim() },
-        boots: { bis: nbItems.bootsBis.trim(), opt1: nbItems.bootsOpt1.trim(), opt2: nbItems.bootsOpt2.trim() },
-        belt: { bis: nbItems.beltBis.trim(), opt1: nbItems.beltOpt1.trim(), opt2: nbItems.beltOpt2.trim() },
-        amulet: { bis: nbItems.amuletBis.trim(), opt1: nbItems.amuletOpt1.trim(), opt2: nbItems.amuletOpt2.trim() },
-        ring: { leftBis: nbItems.ringLeftBis.trim(), rightBis: nbItems.ringRightBis.trim(), opt1: nbItems.ringOpt1.trim(), opt2: nbItems.ringOpt2.trim() },
-      };
-      const itemsSlots = {
-        weapon: itemsAdvanced.weapon.bis,
-        shield: itemsAdvanced.shield.bis,
-        helmet: itemsAdvanced.helmet.bis,
-        body: itemsAdvanced.body.bis,
-        gloves: itemsAdvanced.gloves.bis,
-        boots: itemsAdvanced.boots.bis,
-        belt: itemsAdvanced.belt.bis,
-        amulet: itemsAdvanced.amulet.bis,
-        ring1: itemsAdvanced.ring.leftBis,
-        ring2: itemsAdvanced.ring.rightBis,
-      };
-      const items = [
-        itemsAdvanced.weapon.bis,
-        itemsAdvanced.weapon.opt1,
-        itemsAdvanced.weapon.opt2,
-        itemsAdvanced.shield.bis,
-        itemsAdvanced.shield.opt1,
-        itemsAdvanced.shield.opt2,
-        itemsAdvanced.helmet.bis,
-        itemsAdvanced.helmet.opt1,
-        itemsAdvanced.helmet.opt2,
-        itemsAdvanced.body.bis,
-        itemsAdvanced.body.opt1,
-        itemsAdvanced.body.opt2,
-        itemsAdvanced.gloves.bis,
-        itemsAdvanced.gloves.opt1,
-        itemsAdvanced.gloves.opt2,
-        itemsAdvanced.boots.bis,
-        itemsAdvanced.boots.opt1,
-        itemsAdvanced.boots.opt2,
-        itemsAdvanced.belt.bis,
-        itemsAdvanced.belt.opt1,
-        itemsAdvanced.belt.opt2,
-        itemsAdvanced.amulet.bis,
-        itemsAdvanced.amulet.opt1,
-        itemsAdvanced.amulet.opt2,
-        itemsAdvanced.ring.leftBis,
-        itemsAdvanced.ring.rightBis,
-        itemsAdvanced.ring.opt1,
-        itemsAdvanced.ring.opt2,
-      ].filter(Boolean);
-      const flasks = [nbItems.flask1.trim(), nbItems.flask2.trim(), nbItems.flask3.trim(), nbItems.flask4.trim()].map((v) => (v ? v : null));
-      const mercenaryGear = {
-        weapon: nbMercenaryGear.weapon.trim(),
-        shield: nbMercenaryGear.shield.trim(),
-        helmet: nbMercenaryGear.helmet.trim(),
-        chest: nbMercenaryGear.chest.trim(),
-        belt: nbMercenaryGear.belt.trim(),
-        boots: nbMercenaryGear.boots.trim(),
-        gloves: nbMercenaryGear.gloves.trim(),
-      };
-      await addDoc(collection(firestore, 'builds'), {
-        title,
-        excerpt: excerpt || null,
-        content: content || null,
-        classKey: nbClass,
-        className: classNames[nbClass],
-        buildType: nbType,
-        stats: nbStats,
-        relics,
-        charms,
-        mercenaryType: nbMercenaryType || null,
-        mercenaryGear: nbMercenaryType ? mercenaryGear : null,
-        items,
-        itemsSlots: items.length ? itemsSlots : null,
-        itemsAdvanced: items.length ? itemsAdvanced : null,
-        flasks,
-        authorUid: user.uid,
-        authorNick: nick,
-        authorPhotoURL: profile?.photoURL || user.photoURL || null,
-        status: 'PENDING',
-        featured: false,
-        ratingAvg: 0,
-        ratingCount: 0,
-        ratingSum: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        publishedAt: null,
-      });
-      setSubmitOk(true);
-      setNewBuildOpen(false);
-    } catch (e: any) {
-      const projectId = safeString((firestore as any)?.app?.options?.projectId);
-      const hint = projectId
-        ? ` (projeto: ${projectId}). Se você atualizou as Rules, confirme que fez deploy nesse projeto.`
-        : '';
-      setSubmitError(`${firestoreErrorMessage(e) || 'Falha ao enviar build.'}${hint}`);
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const buildsEmptyText = loading
@@ -1051,192 +1040,157 @@ export function ForumPage() {
         : `No builds found for ${classNames[selectedClass]}.`;
 
   return (
-    <StandardPage title={pageTitle} description={pageDescription} canonicalPath="/forum" structuredData={structuredData}>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath={`/forum${selectedClass === 'ALL' ? '' : `/${selectedClass}`}`} structuredData={structuredData}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16 grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
         <div className="lg:col-span-3 space-y-8">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 border-b border-brand-dark/10 pb-4">
             <div>
               <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Build Forum</h1>
-              <p className="mt-2 text-sm text-brand-darker/60">
-                Submit builds for moderation, browse published builds by class, and rate your favorites.
-              </p>
+              <p className="mt-2 text-sm text-brand-darker/60">Browse community builds and share your own setup.</p>
             </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div className="flex gap-2">
               {!user ? (
                 <Link
                   to={`/login?callbackUrl=${encodeURIComponent('/forum')}`}
-                  className="inline-flex items-center justify-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
+                  className="orange-button text-xs px-4 h-10"
                 >
                   Sign in to post
                 </Link>
               ) : (
-                <button
-                  type="button"
-                  onClick={openNewBuild}
-                  className="inline-flex items-center justify-center gap-2 bg-brand-orange text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-orange-dark transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Submit Build
+                <button type="button" onClick={openNewBuild} className="orange-button text-xs px-4 h-10 flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> Submit Build
                 </button>
               )}
             </div>
           </div>
 
-          {submitOk ? (
+          {submitOk && (
             <div className="bg-green-50 border border-green-200 text-green-900 rounded-2xl p-4 text-sm">
-              Build submitted successfully. It will appear after moderator approval.
+              Success! Your build was submitted and is pending moderation.
             </div>
-          ) : null}
+          )}
 
           <section className="bg-white border border-brand-dark/10 rounded-2xl p-5">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTab('LATEST')}
-                  className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full border transition-colors ${
-                    tab === 'LATEST' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
-                  }`}
-                >
-                  Latest
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTab('TOP')}
-                  className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full border transition-colors ${
-                    tab === 'TOP' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
-                  }`}
-                >
-                  Top Rated
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedClass('ALL')}
-                  className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest rounded-full border transition-colors ${
-                    selectedClass === 'ALL' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
-                  }`}
-                >
-                  All Classes{typeof totalPublishedCount === 'number' ? ` (${totalPublishedCount})` : ''}
-                </button>
-              </div>
+            <div className="flex items-center gap-2 mb-6">
+              <button
+                onClick={() => handleTabChange('LATEST')}
+                className={`px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest border transition-colors ${
+                  tab === 'LATEST' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
+                }`}
+              >
+                Latest
+              </button>
+              <button
+                onClick={() => handleTabChange('TOP')}
+                className={`px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest border transition-colors ${
+                  tab === 'TOP' ? 'bg-brand-orange text-white border-brand-orange' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
+                }`}
+              >
+                Top Rated
+              </button>
+              <Link
+                to="/forum"
+                className={`px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest border transition-colors ${
+                  selectedClass === 'ALL' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:border-brand-orange/40'
+                }`}
+              >
+                All Classes {totalPublishedCount !== null && `(${totalPublishedCount})`}
+              </Link>
             </div>
 
-            <div className="mt-5">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/50 mb-3">Classes</div>
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="mb-8">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/50 mb-3 flex items-center gap-2">
+                <Filter className="w-3 h-3" /> Filter by Class
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {classKeys.map((k) => {
                   const count = publishedCountByClass[k];
                   const active = selectedClass === k;
                   return (
-                    <button
+                    <Link
                       key={k}
-                      type="button"
-                      onClick={() => setSelectedClass(k)}
-                      className={`group text-left bg-white rounded-2xl border overflow-hidden transition-colors ${
-                        active ? 'border-brand-orange/40 bg-brand-orange/5' : 'border-brand-dark/10 hover:border-brand-orange/30 hover:bg-brand-orange/5'
+                      to={`/forum/${k}`}
+                      className={`group flex items-center gap-3 p-3 rounded-2xl border transition-colors ${
+                        active ? 'border-brand-orange bg-brand-orange/5' : 'border-brand-dark/10 hover:border-brand-orange/30'
                       }`}
                     >
-                      <div className="flex items-center gap-3 p-4">
-                        <div className="w-12 h-12 rounded-xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0">
-                          <img
-                            src={`/images/classes/${k}.webp`}
-                            alt={classNames[k]}
-                            className="w-full h-full object-contain pixelated"
-                            referrerPolicy="no-referrer"
-                          />
+                      <div className="w-10 h-10 rounded-xl bg-brand-bg flex items-center justify-center shrink-0 overflow-hidden">
+                        <img src={`/images/classes/${k}.webp`} alt="" className="w-full h-full object-contain pixelated" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className={`text-[12px] font-bold uppercase truncate ${active ? 'text-brand-orange' : 'text-brand-darker'}`}>
+                          {classNames[k]}
                         </div>
-                        <div className="min-w-0">
-                          <div
-                            className={`font-heading font-bold uppercase tracking-tight whitespace-nowrap text-[12px] md:text-[13px] leading-tight transition-colors ${
-                              active ? 'text-brand-orange' : 'text-brand-darker group-hover:text-brand-orange'
-                            }`}
-                          >
-                            {classNames[k]}
-                          </div>
-                          <div className="mt-1 text-xs text-brand-darker/60">
-                            {countsLoading ? '…' : typeof count === 'number' ? `${count} builds` : '—'}
-                          </div>
+                        <div className="text-[10px] text-brand-darker/50">
+                          {countsLoading ? '...' : `${count ?? 0} builds`}
                         </div>
                       </div>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="space-y-3">
               {builds.length === 0 ? (
-                <div className="text-sm text-brand-darker/60 py-8 text-center">{buildsEmptyText}</div>
+                <div className="py-12 text-center text-sm text-brand-darker/50">{buildsEmptyText}</div>
               ) : (
                 builds.map((b) => {
-                  const ratingRounded = Math.max(0, Math.min(5, Math.round(b.ratingAvg)));
-                  const publishedLabel = formatTimestamp(b.publishedAt ?? b.createdAt);
+                  const ratingRounded = Math.round(b.ratingAvg);
                   return (
                     <Link
                       key={b.id}
-                      to={`/build/${encodeURIComponent(b.id)}`}
-                      className="block bg-brand-bg/40 border border-brand-dark/10 rounded-2xl p-4 hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors"
+                      to={`/build/${b.id}`}
+                      className="block p-4 rounded-2xl border border-brand-dark/10 bg-brand-bg/40 hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-white border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0">
-                            <img
-                              src={`/images/classes/${b.classKey}.webp`}
-                              alt={classNames[b.classKey]}
-                              className="w-full h-full object-contain pixelated"
-                              referrerPolicy="no-referrer"
-                            />
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-12 h-12 rounded-xl bg-white border border-brand-dark/10 flex items-center justify-center shrink-0 overflow-hidden">
+                            <img src={`/images/classes/${b.classKey}.webp`} alt="" className="w-full h-full object-contain pixelated" />
                           </div>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <div className="font-heading font-black uppercase italic tracking-tight text-brand-darker">{b.title}</div>
-                              {b.featured ? (
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full bg-brand-orange text-white">
-                                  Featured
-                                </span>
-                              ) : null}
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-heading font-black uppercase italic tracking-tight text-brand-darker truncate">{b.title}</span>
+                              {b.featured && (
+                                <span className="px-2 py-0.5 rounded-full bg-brand-orange text-[9px] font-bold text-white uppercase tracking-widest">Featured</span>
+                              )}
                             </div>
-                            <div className="text-xs text-brand-darker/60">
-                              {classNames[b.classKey]} · by{' '}
-                              <span className="inline-flex items-center gap-2">
-                                {b.authorPhotoURL ? (
-                                  <img
-                                    src={b.authorPhotoURL}
-                                    alt={b.authorNick ?? 'Author'}
-                                    className="w-5 h-5 rounded-full object-cover border border-brand-dark/10"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                    }}
-                                  />
-                                ) : null}
-                                <span className="text-brand-orange font-bold">{b.authorNick ?? 'Unknown'}</span>
-                              </span>
-                              {publishedLabel ? <span className="ml-2 text-brand-darker/50">· {publishedLabel}</span> : null}
+                            <div className="flex items-center gap-2 text-xs text-brand-darker/60">
+                              <span className="font-bold">{classNames[b.classKey]}</span>
+                              <span>·</span>
+                              <span>by {b.authorNick || 'Unknown'}</span>
+                              {b.publishedAt && (
+                                <>
+                                  <span>·</span>
+                                  <span>{formatTimestamp(b.publishedAt)}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end gap-4">
-                          <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full border ${buildTierBadgeClasses(b.buildType)}`}>
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${buildTierBadgeClasses(b.buildType)}`}>
                             {buildTierLabel(b.buildType)}
                           </span>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-4 h-4 ${i < ratingRounded ? 'text-brand-orange fill-current' : 'text-brand-dark/10'}`}
-                              />
-                            ))}
-                          </div>
-                          <div className="text-[11px] font-bold text-brand-darker/50 whitespace-nowrap">
-                            {b.ratingCount > 0 ? `${b.ratingAvg.toFixed(1)} (${b.ratingCount})` : 'No ratings'}
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center">
+                              {[...Array(5)].map((_, i) => (
+                                <Star key={i} className={`w-3.5 h-3.5 ${i < ratingRounded ? 'text-brand-orange fill-current' : 'text-brand-dark/10'}`} />
+                              ))}
+                            </div>
+                            <span className="text-[11px] font-bold text-brand-darker/40">{b.ratingCount}</span>
+                            {(isAdmin || user?.uid === b.authorUid) && (
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void openEditBuild(b.id); }}
+                                className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-brand-darker hover:text-brand-orange transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
-
-                      {b.excerpt ? <div className="mt-3 text-sm text-brand-darker/70">{b.excerpt}</div> : null}
                     </Link>
                   );
                 })
@@ -1248,1510 +1202,594 @@ export function ForumPage() {
         <Sidebar t={tSidebar} />
       </div>
 
-      <Modal open={newBuildOpen} title="Submit Build" onClose={() => setNewBuildOpen(false)} maxWidthClassName="max-w-6xl">
+      <Modal open={newBuildOpen} title={editingBuildId ? 'Edit Build' : 'Submit Build'} onClose={() => setNewBuildOpen(false)} maxWidthClassName="max-w-6xl">
         <div className="space-y-4">
           <div className="text-sm text-brand-darker/70">Submissions require an account and will be reviewed before publishing.</div>
 
-          {submitError ? <div className="text-xs font-bold text-red-600">{submitError}</div> : null}
+          {submitError && <div className="text-xs font-bold text-red-600">{submitError}</div>}
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-6">
             <div className="space-y-5">
               <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5 space-y-4">
                 <div className="font-heading font-bold uppercase tracking-widest text-brand-darker">Base</div>
-
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Title</label>
-                    <input
-                      value={nbTitle}
-                      onChange={(e) => setNbTitle(e.target.value)}
-                      className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                      placeholder="e.g. Season 9 Prophet Crit Build"
-                      maxLength={80}
-                    />
+                    <input value={nbTitle} onChange={(e) => setNbTitle(e.target.value)} className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors" placeholder="e.g. Season 9 Prophet Build" maxLength={80} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Class</label>
-                    <select
-                      value={nbClass}
-                      onChange={(e) => setNbClass(safeClassKey(e.target.value))}
-                      className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                    >
-                      {classKeys.map((k) => (
-                        <option key={k} value={k}>
-                          {classNames[k]}
-                        </option>
-                      ))}
+                    <select value={nbClass} onChange={(e) => setNbClass(safeClassKey(e.target.value))} className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors">
+                      {classKeys.map((k) => <option key={k} value={k}>{classNames[k]}</option>)}
                     </select>
                   </div>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Short summary</label>
-                    <input
-                      value={nbExcerpt}
-                      onChange={(e) => setNbExcerpt(e.target.value)}
-                      className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                      placeholder="One sentence describing the build focus."
-                      maxLength={140}
-                    />
+                    <input value={nbExcerpt} onChange={(e) => setNbExcerpt(e.target.value)} className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors" placeholder="One sentence focus." maxLength={140} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Build type</label>
-                    <select
-                      value={nbType}
-                      onChange={(e) => setNbType(e.target.value as BuildTier)}
-                      className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                    >
-                      <option value="starterGame">StarterGame</option>
-                      <option value="midGame">MidGame</option>
-                      <option value="endGame">EndGame</option>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Tier</label>
+                    <select value={nbType} onChange={(e) => setNbType(e.target.value as BuildTier)} className="w-full bg-white border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors">
+                      <option value="starterGame">Starter Game</option>
+                      <option value="midGame">Mid Game</option>
+                      <option value="endGame">End Game</option>
                     </select>
                   </div>
                 </div>
-
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Details (optional)</label>
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('★ ')}
-                      aria-label="Star"
-                      title="Star"
-                    >
-                      <Star className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('✓ ')}
-                      aria-label="Check"
-                      title="Check"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('✗ ')}
-                      aria-label="X"
-                      title="X"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('ℹ ')}
-                      aria-label="Info"
-                      title="Info"
-                    >
-                      <Info className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('📌 ')}
-                      aria-label="Pin"
-                      title="Pin"
-                    >
-                      <Pin className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('❤️ ')}
-                      aria-label="Heart"
-                      title="Heart"
-                    >
-                      <Heart className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('⚡ ')}
-                      aria-label="Zap"
-                      title="Zap"
-                    >
-                      <Zap className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('💀 ')}
-                      aria-label="Skull"
-                      title="Skull"
-                    >
-                      <Skull className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('🛡️ ')}
-                      aria-label="Shield"
-                      title="Shield"
-                    >
-                      <Shield className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => insertAtCursor('🔥 ')}
-                      aria-label="Flame"
-                      title="Flame"
-                    >
-                      <Flame className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => applyWrapToContent('**', '**')}
-                      aria-label="Bold"
-                      title="Bold"
-                    >
-                      <Bold className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => applyWrapToContent('*', '*')}
-                      aria-label="Italic"
-                      title="Italic"
-                    >
-                      <Italic className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => applyWrapToContent('__', '__')}
-                      aria-label="Underline"
-                      title="Underline"
-                    >
-                      <Underline className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => applyPrefixToLines('- ')}
-                      aria-label="Bulleted list"
-                      title="Bulleted list"
-                    >
-                      <List className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => applyPrefixToLines('1. ')}
-                      aria-label="Numbered list"
-                      title="Numbered list"
-                    >
-                      <ListOrdered className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => applyPrefixToLines('> ')}
-                      aria-label="Quote"
-                      title="Quote"
-                    >
-                      <Quote className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => {
-                        const el = nbContentRef.current;
-                        const text = nbContent;
-                        const start = el ? el.selectionStart : text.length;
-                        const end = el ? el.selectionEnd : text.length;
-                        const selected = text.slice(start, end);
-                        const isBlock = selected.includes('\n');
-                        if (isBlock) applyWrapToContent('```\n', '\n```');
-                        else applyWrapToContent('`', '`');
-                      }}
-                      aria-label="Code"
-                      title="Code"
-                    >
-                      <Code className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-orange hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors flex items-center justify-center"
-                      onClick={() => {
-                        const el = nbContentRef.current;
-                        const text = nbContent;
-                        const start = el ? el.selectionStart : text.length;
-                        const end = el ? el.selectionEnd : text.length;
-                        const selected = text.slice(start, end) || 'link';
-                        const before = `[${selected}](https://)`;
-                        const next = `${text.slice(0, start)}${before}${text.slice(end)}`;
-                        setNbContent(next);
-                        if (!el) return;
-                        const urlStart = start + selected.length + 3;
-                        const urlEnd = urlStart + 'https://'.length;
-                        requestAnimationFrame(() => {
-                          el.focus();
-                          el.setSelectionRange(urlStart, urlEnd);
-                        });
-                      }}
-                      aria-label="Link"
-                      title="Link"
-                    >
-                      <Link2 className="w-4 h-4" />
-                    </button>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Details (Markdown)</label>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    <button type="button" onClick={() => insertAtCursor('★ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-yellow-500 hover:border-yellow-500 transition-colors"><Star className="w-3.5 h-3.5 fill-current" /></button>
+                    <button type="button" onClick={() => insertAtCursor('✓ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-green-500 hover:border-green-500 transition-colors"><Check className="w-3.5 h-3.5 stroke-[3px]" /></button>
+                    <button type="button" onClick={() => insertAtCursor('✗ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-red-500 hover:border-red-500 transition-colors"><X className="w-3.5 h-3.5 stroke-[3px]" /></button>
+                    <button type="button" onClick={() => insertAtCursor('ℹ️ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-blue-500 hover:border-blue-500 transition-colors"><Info className="w-3.5 h-3.5 fill-current" /></button>
+                    <button type="button" onClick={() => insertAtCursor('❤️ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-red-500 hover:border-red-500 transition-colors"><Heart className="w-3.5 h-3.5 fill-current" /></button>
+                    <button type="button" onClick={() => insertAtCursor('⚡ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-yellow-400 hover:border-yellow-400 transition-colors"><Zap className="w-3.5 h-3.5 fill-current" /></button>
+                    <button type="button" onClick={() => insertAtCursor('💀 ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-gray-600 hover:border-gray-600 transition-colors"><Skull className="w-3.5 h-3.5 fill-current" /></button>
+                    <button type="button" onClick={() => insertAtCursor('🛡️ ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-blue-600 hover:border-blue-600 transition-colors"><Shield className="w-3.5 h-3.5 fill-current" /></button>
+                    <button type="button" onClick={() => insertAtCursor('🔥 ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-orange-600 hover:border-orange-600 transition-colors"><Flame className="w-3.5 h-3.5 fill-current" /></button>
+                    <div className="w-px h-6 bg-brand-dark/10 mx-1" />
+                    <button type="button" onClick={() => applyWrapToContent('**', '**')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center"><Bold className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => applyWrapToContent('*', '*')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center"><Italic className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => applyPrefixToLines('- ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center"><List className="w-3.5 h-3.5" /></button>
                   </div>
-                  <textarea
-                    ref={nbContentRef}
-                    value={nbContent}
-                    onChange={(e) => setNbContent(e.target.value)}
-                    className="w-full bg-white border border-brand-dark/10 rounded-xl p-3 text-sm focus:outline-none focus:border-brand-orange transition-colors min-h-40"
-                    placeholder="Gear notes, skills, relics, playstyle tips..."
-                    maxLength={4000}
-                  />
+                  <textarea ref={nbContentRef} value={nbContent} onChange={(e) => setNbContent(e.target.value)} className="w-full bg-white border border-brand-dark/10 rounded-xl p-3 text-sm focus:outline-none focus:border-brand-orange transition-colors min-h-40" placeholder="Tips, skills, rotation..." />
                 </div>
               </section>
 
               <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div className="flex items-center justify-between mb-4">
                   <div className="font-heading font-bold uppercase tracking-widest text-brand-darker">Attributes</div>
-                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/50">
-                    Total: {NB_TOTAL} · Remaining: {Math.max(0, NB_TOTAL - totalNbStats(nbStats))}
-                  </div>
+                  <div className="text-[10px] font-bold text-brand-darker/40 uppercase">Total: {NB_TOTAL} · Remaining: {NB_TOTAL - totalNbStats(nbStats)}</div>
                 </div>
-
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {(
                     [
-                      { key: 'strength', label: 'Strength', color: '#92400e' },
-                      { key: 'dexterity', label: 'Dexterity', color: '#16a34a' },
-                      { key: 'intelligence', label: 'Intelligence', color: '#db2777' },
-                      { key: 'energy', label: 'Energy', color: '#0284c7' },
-                      { key: 'armor', label: 'Armor', color: '#4b5563' },
-                      { key: 'vitality', label: 'Vitality', color: '#dc2626' },
+                      { key: 'strength', label: 'STR', color: '#ef4444' },
+                      { key: 'dexterity', label: 'DEX', color: '#22c55e' },
+                      { key: 'intelligence', label: 'INT', color: '#3b82f6' },
+                      { key: 'energy', label: 'ENG', color: '#eab308' },
+                      { key: 'armor', label: 'ARM', color: '#06b6d4' },
+                      { key: 'vitality', label: 'VIT', color: '#f97316' },
                     ] as const
-                  ).map(({ key, label, color }) => {
-                    const value = nbStats[key] || 0;
-                    const remain = NB_TOTAL - totalNbStats(nbStats);
-                    return (
-                      <div key={key} className="bg-white border rounded-2xl p-4" style={{ borderColor: `${color}55` }}>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="text-xs font-bold flex items-center gap-2" style={{ color }}>
-                            <AttributePentagramIcon color={color} />
-                            <span>{label}</span>
-                          </div>
-                          <div className="text-sm font-black text-brand-darker">{value}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded-lg border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors disabled:opacity-50"
-                            onClick={() =>
-                              setNbStats((s) => ({
-                                ...s,
-                                [key]: Math.max(0, (s[key] || 0) - 1),
-                              }))
-                            }
-                            disabled={value <= 0}
-                          >
-                            -1
-                          </button>
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded-lg border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors disabled:opacity-50"
-                            onClick={() =>
-                              setNbStats((s) => ({
-                                ...s,
-                                [key]: Math.max(0, (s[key] || 0) - 10),
-                              }))
-                            }
-                            disabled={value <= 0}
-                          >
-                            -10
-                          </button>
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded-lg border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors disabled:opacity-50"
-                            onClick={() =>
-                              setNbStats((s) => ({
-                                ...s,
-                                [key]: (s[key] || 0) + 1,
-                              }))
-                            }
-                            disabled={remain <= 0}
-                          >
-                            +1
-                          </button>
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded-lg border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors disabled:opacity-50"
-                            onClick={() =>
-                              setNbStats((s) => {
-                                const toAdd = Math.min(10, NB_TOTAL - totalNbStats(s));
-                                if (toAdd <= 0) return s;
-                                return { ...s, [key]: (s[key] || 0) + toAdd };
-                              })
-                            }
-                            disabled={remain <= 0}
-                          >
-                            +10
-                          </button>
-                        </div>
+                  ).map((it) => (
+                    <div key={it.key} className="rounded-2xl p-3 border shadow-sm transition-all" style={{ backgroundColor: `${it.color}10`, borderColor: `${it.color}30` }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <AttributePentagramIcon color={it.color} />
+                        <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: it.color }}>{it.label}</div>
                       </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5 space-y-4">
-                <div className="font-heading font-bold uppercase tracking-widest text-brand-darker">Relics</div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                  {nbRelics.map((name, idx) => {
-                    const value = String(name ?? '');
-                    const img = value.trim() ? getRelicImageSrc(value) : '';
-                    const isQuestSlot = idx === 4;
-                    return (
-                      <div
-                        key={idx}
-                        className={`relative bg-white border rounded-2xl p-3 ${
-                          isQuestSlot ? 'border-red-500/40' : 'border-brand-dark/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            className={`w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center shrink-0 border transition-colors ${
-                              isQuestSlot
-                                ? 'bg-red-50 border-red-500/40 hover:border-red-500/70'
-                                : 'bg-brand-bg border-brand-dark/10 hover:border-brand-orange/40'
-                            }`}
-                            onClick={() => {
-                              setActiveRelicSlot(idx);
-                              setRelicSearch('');
-                            }}
-                            aria-label={`Select relic slot ${idx + 1}`}
-                          >
-                            {img ? (
-                              <img
-                                src={img}
-                                alt={value}
-                                className="w-full h-full object-contain pixelated"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            ) : (
-                              <div className={`text-xs font-bold ${isQuestSlot ? 'text-red-500/50' : 'text-brand-darker/30'}`}>
-                                {idx + 1}
-                              </div>
-                            )}
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-1">Slot {idx + 1}</div>
-                            <div className="text-xs font-bold text-brand-darker truncate">{value.trim() ? value : 'Select…'}</div>
-                          </div>
-                          {value.trim() ? (
-                            <button
-                              type="button"
-                              className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors shrink-0"
-                              onClick={() =>
-                                setNbRelics((prev) => {
-                                  const next = prev.slice();
-                                  next[idx] = null;
-                                  return next;
-                                })
-                              }
-                              aria-label="Clear"
-                            >
-                              ×
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {activeRelicSlot !== null ? (
-                  <div
-                    className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4"
-                    onClick={(e) => {
-                      if (e.target === e.currentTarget) setActiveRelicSlot(null);
-                    }}
-                  >
-                    <div className="w-full max-w-xl bg-white border border-brand-dark/10 rounded-2xl shadow-2xl overflow-hidden mt-14">
-                      <div className="px-4 py-3 border-b border-brand-dark/10 flex items-center justify-between gap-3">
-                        <div className="text-xs font-bold uppercase tracking-widest text-brand-darker">
-                          Select Relic · Slot {activeRelicSlot + 1}
-                        </div>
-                        <button
-                          type="button"
-                          className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors shrink-0"
-                          onClick={() => setActiveRelicSlot(null)}
-                          aria-label="Close"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <div className="p-4">
-                        <input
-                          value={relicSearch}
-                          onChange={(e) => setRelicSearch(e.target.value)}
-                          className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                          placeholder="Search relic…"
-                          autoFocus
-                        />
-
-                        <div className="mt-3 max-h-[55vh] overflow-auto rounded-xl border border-brand-dark/10">
-                          <button
-                            type="button"
-                            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-brand-orange/5 transition-colors border-b border-brand-dark/10"
-                            onClick={() => {
-                              setNbRelics((prev) => {
-                                const next = prev.slice();
-                                next[activeRelicSlot] = null;
-                                return next;
-                              });
-                              setActiveRelicSlot(null);
-                              setRelicSearch('');
-                            }}
-                          >
-                            <span className="font-bold text-brand-darker/70">Clear</span>
-                            <span className="text-brand-darker/40">×</span>
-                          </button>
-
-                          {filteredRelicOptions.map((opt) => {
-                            const optImg = getRelicImageSrc(opt);
-                            return (
-                              <button
-                                key={opt}
-                                type="button"
-                                className="w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-brand-orange/5 transition-colors"
-                                onClick={() => {
-                                  setNbRelics((prev) => {
-                                    const next = prev.slice();
-                                    next[activeRelicSlot] = opt;
-                                    return next;
-                                  });
-                                  setActiveRelicSlot(null);
-                                  setRelicSearch('');
-                                }}
-                              >
-                                <span className="w-7 h-7 rounded-lg bg-brand-bg border border-brand-dark/10 flex items-center justify-center overflow-hidden shrink-0">
-                                  {optImg ? (
-                                    <img
-                                      src={optImg}
-                                      alt={opt}
-                                      className="w-full h-full object-contain pixelated"
-                                      referrerPolicy="no-referrer"
-                                      onError={(e) => {
-                                        e.currentTarget.style.display = 'none';
-                                      }}
-                                    />
-                                  ) : null}
-                                </span>
-                                <span className="text-brand-darker/80">{opt}</span>
-                              </button>
-                            );
-                          })}
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-sm font-black" style={{ color: it.color }}>{nbStats[it.key]}</span>
+                        <div className="flex gap-0.5">
+                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.max(0, s[it.key] - 10) }))} className="w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">-10</button>
+                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.max(0, s[it.key] - 1) }))} className="w-5 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">-1</button>
+                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.min(NB_TOTAL, s[it.key] + 1) }))} className="w-5 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">+1</button>
+                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.min(NB_TOTAL, s[it.key] + 10) }))} className="w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">+10</button>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ) : null}
+                  ))}
+                </div>
               </section>
 
               <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div className="font-heading font-bold uppercase tracking-widest text-brand-darker">Charms</div>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 bg-white border border-brand-dark/10 text-brand-darker px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors"
-                    onClick={() => setNbCharms((prev) => [...prev, ''])}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add
-                  </button>
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-darker mb-4">Relics</div>
+                <div className="grid grid-cols-5 gap-2">
+                  {nbRelics.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setActiveRelicSlot(i); setRelicSearch(''); }}
+                      className={`aspect-square rounded-xl border flex items-center justify-center overflow-hidden transition-colors ${
+                        i === 4
+                          ? 'bg-red-50 border-red-200 hover:border-red-400'
+                          : 'bg-white border-brand-dark/10 hover:border-brand-orange'
+                      }`}
+                    >
+                      {r ? (
+                        <img src={getRelicImageSrc(r)} alt="" className="w-full h-full object-contain pixelated" />
+                      ) : (
+                        <Plus className={`w-4 h-4 ${i === 4 ? 'text-red-300' : 'text-brand-dark/20'}`} />
+                      )}
+                    </button>
+                  ))}
                 </div>
-
-                {nbCharms.length === 0 ? (
-                  <div className="text-sm text-brand-darker/60">Add charms to show them in the preview.</div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {nbCharms.map((name, idx) => {
-                      const value = String(name ?? '');
-                      const charm = charmByName.get(value);
-                      const img = charm?.file ? `/images/${charm.file}` : '';
-                      return (
-                        <div key={idx} className="bg-white border border-brand-dark/10 rounded-2xl p-3">
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              className="w-12 h-12 rounded-xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0 hover:border-brand-orange/40 transition-colors"
-                              onClick={() => {
-                                setActiveCharmSlot(idx);
-                                setCharmSearch('');
-                              }}
-                              aria-label={`Select charm ${idx + 1}`}
-                            >
-                              {img ? (
-                                <img
-                                  src={img}
-                                  alt={value}
-                                  className="w-full h-full object-contain pixelated"
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              ) : (
-                                <div className="text-xs font-bold text-brand-darker/30">{idx + 1}</div>
-                              )}
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-1">Charm</div>
-                              <button
-                                type="button"
-                                className="w-full text-left bg-brand-bg border border-brand-dark/10 rounded-xl py-2 px-3 text-sm hover:border-brand-orange/40 transition-colors"
-                                onClick={() => {
-                                  setActiveCharmSlot(idx);
-                                  setCharmSearch('');
-                                }}
-                              >
-                                <span className={`block truncate ${value.trim() ? 'text-brand-darker' : 'text-brand-darker/40'}`}>
-                                  {value.trim() ? value : 'Select…'}
-                                </span>
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors shrink-0"
-                              onClick={() => setNbCharms((prev) => prev.filter((_, i) => i !== idx))}
-                              aria-label="Remove"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {activeCharmSlot !== null ? (
-                  <div
-                    className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4"
-                    onClick={(e) => {
-                      if (e.target === e.currentTarget) setActiveCharmSlot(null);
-                    }}
-                  >
-                    <div className="w-full max-w-xl bg-white border border-brand-dark/10 rounded-2xl shadow-2xl overflow-hidden mt-14">
-                      <div className="px-4 py-3 border-b border-brand-dark/10 flex items-center justify-between gap-3">
-                        <div className="text-xs font-bold uppercase tracking-widest text-brand-darker">
-                          Select Charm · Slot {activeCharmSlot + 1}
-                        </div>
-                        <button
-                          type="button"
-                          className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors shrink-0"
-                          onClick={() => setActiveCharmSlot(null)}
-                          aria-label="Close"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <div className="p-4">
-                        <input
-                          value={charmSearch}
-                          onChange={(e) => setCharmSearch(e.target.value)}
-                          className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                          placeholder="Search charm…"
-                          autoFocus
-                        />
-
-                        <div className="mt-3 max-h-[55vh] overflow-auto rounded-xl border border-brand-dark/10">
-                          <button
-                            type="button"
-                            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-brand-orange/5 transition-colors border-b border-brand-dark/10"
-                            onClick={() => {
-                              setNbCharms((prev) => {
-                                const next = prev.slice();
-                                next[activeCharmSlot] = '';
-                                return next;
-                              });
-                              setActiveCharmSlot(null);
-                              setCharmSearch('');
-                            }}
-                          >
-                            <span className="font-bold text-brand-darker/70">Clear</span>
-                            <span className="text-brand-darker/40">×</span>
-                          </button>
-
-                          {filteredCharmOptions.map((opt) => {
-                            const optCharm = charmByName.get(opt);
-                            const optImg = optCharm?.file ? `/images/${optCharm.file}` : '';
-                            return (
-                              <button
-                                key={opt}
-                                type="button"
-                                className="w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-brand-orange/5 transition-colors"
-                                onClick={() => {
-                                  setNbCharms((prev) => {
-                                    const next = prev.slice();
-                                    next[activeCharmSlot] = opt;
-                                    return next;
-                                  });
-                                  setActiveCharmSlot(null);
-                                  setCharmSearch('');
-                                }}
-                              >
-                                <span className="w-7 h-7 rounded-lg bg-brand-bg border border-brand-dark/10 flex items-center justify-center overflow-hidden shrink-0">
-                                  {optImg ? (
-                                    <img
-                                      src={optImg}
-                                      alt={opt}
-                                      className="w-full h-full object-contain pixelated"
-                                      referrerPolicy="no-referrer"
-                                      onError={(e) => {
-                                        e.currentTarget.style.display = 'none';
-                                      }}
-                                    />
-                                  ) : null}
-                                </span>
-                                <span className="text-brand-darker/80">{opt}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-
-              {activeItemPick ? (
-                <div
-                  className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4"
-                  onClick={(e) => {
-                    if (e.target === e.currentTarget) setActiveItemPick(null);
-                  }}
-                >
-                  <div className="w-full max-w-xl bg-white border border-brand-dark/10 rounded-2xl shadow-2xl overflow-hidden mt-14">
-                    <div className="px-4 py-3 border-b border-brand-dark/10 flex items-center justify-between gap-3">
-                      <div className="text-xs font-bold uppercase tracking-widest text-brand-darker">{activeItemPick.label}</div>
-                      <button
-                        type="button"
-                        className="w-9 h-9 rounded-xl border border-brand-dark/10 bg-white text-brand-darker hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors shrink-0"
-                        onClick={() => setActiveItemPick(null)}
-                        aria-label="Close"
-                      >
-                        ×
-                      </button>
-                    </div>
-
-                    <div className="p-4">
-                      <input
-                        value={itemSearch}
-                        onChange={(e) => setItemSearch(e.target.value)}
-                        className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-orange transition-colors"
-                        placeholder="Search item…"
-                        autoFocus
-                      />
-
-                      <div className="mt-3 max-h-[55vh] overflow-auto rounded-xl border border-brand-dark/10">
-                        <button
-                          type="button"
-                          className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-brand-orange/5 transition-colors border-b border-brand-dark/10"
-                          onClick={() => applyPickedItem('')}
-                        >
-                          <span className="font-bold text-brand-darker/70">Clear</span>
-                          <span className="text-brand-darker/40">×</span>
-                        </button>
-
-                        {itemLoading ? <div className="px-3 py-3 text-sm text-brand-darker/60">Loading...</div> : null}
-
-                        {!itemLoading && filteredItemOptions.length === 0 ? (
-                          <div className="px-3 py-3 text-sm text-brand-darker/60">No items found.</div>
-                        ) : null}
-
-                        {filteredItemOptions.map((it) => {
-                          const name = String(it.name || it.id).trim();
-                          const img = getItemImage(it);
-                          return (
-                            <button
-                              key={it.id}
-                              type="button"
-                              className="w-full flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-brand-orange/5 transition-colors"
-                              onClick={() => applyPickedItem(name)}
-                            >
-                              <span className="w-7 h-7 rounded-lg bg-brand-bg border border-brand-dark/10 flex items-center justify-center overflow-hidden shrink-0">
-                                {img ? (
-                                  <img
-                                    src={img}
-                                    alt={name}
-                                    className="w-full h-full object-contain pixelated"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      const t = e.currentTarget;
-                                      if (t.dataset.fallbackApplied) return;
-                                      t.dataset.fallbackApplied = '1';
-                                      t.src = ITEM_FALLBACK_ICON;
-                                    }}
-                                  />
-                                ) : null}
-                              </span>
-                              <span className="text-brand-darker/80">{name}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5 space-y-4">
-                <div className="font-heading font-bold uppercase tracking-widest text-brand-darker">Mercenary</div>
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Type</div>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { key: '', label: 'None', icon: '' },
-                      {
-                        key: 'knight',
-                        label: 'Knight',
-                        icon: '/images/cavaleiro.webp',
-                      },
-                      {
-                        key: 'archer',
-                        label: 'Archer',
-                        icon: '/images/arqueiro.webp',
-                      },
-                      {
-                        key: 'magister',
-                        label: 'Magister',
-                        icon: '/images/magister.webp',
-                      },
-                    ].map((opt) => {
-                      const active = nbMercenaryType === (opt.key as any);
-                      return (
-                        <button
-                          key={opt.key || 'none'}
-                          type="button"
-                          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border bg-white text-sm font-bold transition-colors ${
-                            active ? 'border-brand-orange/60 bg-brand-orange/5 text-brand-darker' : 'border-brand-dark/10 text-brand-darker hover:border-brand-orange/40'
-                          }`}
-                          onClick={() => setNbMercenaryType(opt.key as any)}
-                        >
-                          <span className="w-6 h-6 rounded-lg bg-brand-bg border border-brand-dark/10 flex items-center justify-center overflow-hidden shrink-0">
-                            {opt.icon ? (
-                              <img
-                                src={opt.icon}
-                                alt={opt.label}
-                                className="w-full h-full object-contain pixelated"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            ) : (
-                              <span className="text-[10px] text-brand-darker/40">—</span>
-                            )}
-                          </span>
-                          <span>{opt.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {nbMercenaryType ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {(
-                      [
-                        { key: 'weapon', slot: 'weapon', label: 'Weapon' },
-                        { key: 'shield', slot: 'shield', label: 'Shield' },
-                        { key: 'helmet', slot: 'helmet', label: 'Helmet' },
-                        { key: 'chest', slot: 'body', label: 'Chest' },
-                        { key: 'belt', slot: 'belt', label: 'Belt' },
-                        { key: 'boots', slot: 'boots', label: 'Boots' },
-                        { key: 'gloves', slot: 'gloves', label: 'Gloves' },
-                      ] as const
-                    ).map((s) => {
-                      const value = String((nbMercenaryGear as any)[s.key] || '');
-                      const img = getItemImageForSlot(s.slot, value);
-                      return (
-                        <div key={s.key}>
-                          <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">{s.label}</div>
-                          <button
-                            type="button"
-                            className="relative w-14 h-14 rounded-2xl bg-white border border-brand-dark/10 overflow-hidden flex items-center justify-center hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                            onClick={() => setActiveItemPick({ target: 'merc', field: s.key, slot: s.slot, label: `Mercenary · ${s.label}` })}
-                            title={value}
-                          >
-                            {img ? (
-                              <img
-                                src={img}
-                                alt={value || s.label}
-                                className="w-full h-full object-contain pixelated"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => {
-                                  const t = e.currentTarget;
-                                  if (t.dataset.fallbackApplied) return;
-                                  t.dataset.fallbackApplied = '1';
-                                  t.src = ITEM_FALLBACK_ICON;
-                                }}
-                              />
-                            ) : (
-                              <span className="text-sm font-black text-brand-darker/40">+</span>
-                            )}
-                          </button>
-                          <div className={`mt-1 text-[11px] ${value.trim() ? 'text-brand-darker/70' : 'text-brand-darker/40'} truncate`}>
-                            {value.trim() ? value : 'Select…'}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
               </section>
 
               <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5">
                 <div className="font-heading font-bold uppercase tracking-widest text-brand-darker mb-4">Items</div>
-
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {(
                     [
-                      {
-                        slot: 'weapon',
-                        label: 'Weapon',
-                        picks: [
-                          { field: 'weaponBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'weaponOpt1', label: 'Option 1' },
-                          { field: 'weaponOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'shield',
-                        label: 'Shield',
-                        picks: [
-                          { field: 'shieldBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'shieldOpt1', label: 'Option 1' },
-                          { field: 'shieldOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'helmet',
-                        label: 'Helmet',
-                        picks: [
-                          { field: 'helmetBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'helmetOpt1', label: 'Option 1' },
-                          { field: 'helmetOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'body',
-                        label: 'Body',
-                        picks: [
-                          { field: 'bodyBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'bodyOpt1', label: 'Option 1' },
-                          { field: 'bodyOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'gloves',
-                        label: 'Gloves',
-                        picks: [
-                          { field: 'glovesBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'glovesOpt1', label: 'Option 1' },
-                          { field: 'glovesOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'boots',
-                        label: 'Boots',
-                        picks: [
-                          { field: 'bootsBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'bootsOpt1', label: 'Option 1' },
-                          { field: 'bootsOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'belt',
-                        label: 'Belt',
-                        picks: [
-                          { field: 'beltBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'beltOpt1', label: 'Option 1' },
-                          { field: 'beltOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'amulet',
-                        label: 'Amulet',
-                        picks: [
-                          { field: 'amuletBis', label: 'BIS', tag: 'BIS' },
-                          { field: 'amuletOpt1', label: 'Option 1' },
-                          { field: 'amuletOpt2', label: 'Option 2' },
-                        ],
-                      },
-                      {
-                        slot: 'ring',
-                        label: 'Rings',
-                        picks: [
-                          { field: 'ringLeftBis', label: 'BIS Left', tag: 'BIS L' },
-                          { field: 'ringRightBis', label: 'BIS Right', tag: 'BIS R' },
-                          { field: 'ringOpt1', label: 'Option 1' },
-                          { field: 'ringOpt2', label: 'Option 2' },
-                        ],
-                      },
+                      { slot: 'weapon', label: 'Weapon', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'shield', label: 'Shield', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'helmet', label: 'Helmet', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'body', label: 'Body Armor', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'gloves', label: 'Gloves', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'boots', label: 'Boots', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'belt', label: 'Belt', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'amulet', label: 'Amulet', picks: [{ key: 'Bis', label: 'BIS' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'ring', label: 'Rings', picks: [{ key: 'LeftBis', label: 'BIS L' }, { key: 'RightBis', label: 'BIS R' }, { key: 'Opt1', label: 'Opt 1' }, { key: 'Opt2', label: 'Opt 2' }] },
+                      { slot: 'flask', label: 'Flasks', picks: [{ key: '1', label: '1' }, { key: '2', label: '2' }, { key: '3', label: '3' }, { key: '4', label: '4' }] },
                     ] as const
                   ).map((group) => (
-                    <div key={group.slot}>
-                      <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">{group.label}</div>
-                      <div className="flex flex-wrap gap-4">
+                    <div key={group.slot} className="space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/40">{group.label}</div>
+                      <div className="grid grid-cols-4 gap-2">
                         {group.picks.map((p) => {
-                          const value = String((nbItems as any)[p.field] || '');
-                          const img = getItemImageForSlot(group.slot, value);
-                          const isBis = Boolean((p as any).tag);
+                          const field = `${group.slot}${p.key}`;
+                          const val = (nbItems as any)[field];
+                          const isBis = p.key.toLowerCase().includes('bis');
                           return (
-                            <div key={p.field} className="w-[92px]">
-                              <button
-                                type="button"
-                                className={`relative w-14 h-14 rounded-2xl overflow-hidden flex items-center justify-center border transition-colors ${
-                                  isBis ? 'bg-green-50 border-green-300 hover:border-green-400' : 'bg-white border-brand-dark/10 hover:border-brand-orange/40 hover:bg-brand-orange/5'
-                                }`}
-                                onClick={() =>
-                                  setActiveItemPick({
-                                    target: 'items',
-                                    field: p.field,
-                                    slot: group.slot,
-                                    label: `${group.label} · ${p.label}`,
-                                  })
-                                }
-                                title={value}
-                              >
-                                {isBis ? (
-                                  <span className="absolute top-1 left-1 bg-green-600 text-white text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md">
-                                    {(p as any).tag}
-                                  </span>
-                                ) : null}
-                                {img ? (
-                                  <img
-                                    src={img}
-                                    alt={value || group.label}
-                                    className="w-full h-full object-contain pixelated"
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                      const t = e.currentTarget;
-                                      if (t.dataset.fallbackApplied) return;
-                                      t.dataset.fallbackApplied = '1';
-                                      t.src = ITEM_FALLBACK_ICON;
-                                    }}
-                                  />
-                                ) : (
-                                  <span className="text-sm font-black text-brand-darker/40">+</span>
-                                )}
-                              </button>
-                              <div className={`mt-1 text-[11px] ${value.trim() ? 'text-brand-darker/70' : 'text-brand-darker/40'} truncate`}>
-                                {p.label}: {value.trim() ? value : 'Select…'}
+                            <button
+                              key={field}
+                              type="button"
+                              onClick={() => setActiveItemPick({ target: 'items', field, slot: group.slot, label: `${group.label} ${p.label}` })}
+                              className={`group relative aspect-square rounded-xl border flex items-center justify-center overflow-hidden transition-all shadow-sm ${
+                                isBis
+                                  ? 'bg-green-50 border-green-200 hover:border-green-400'
+                                  : 'bg-white border-brand-dark/10 hover:border-brand-orange'
+                              }`}
+                              title={val || `Select ${p.label}`}
+                            >
+                              {val ? (
+                                <img src={getItemImageForSlot(group.slot, val)} alt={val} className="w-full h-full object-contain pixelated p-1" />
+                              ) : (
+                                <Plus className={`w-4 h-4 transition-colors ${isBis ? 'text-green-300' : 'text-brand-dark/20 group-hover:text-brand-orange'}`} />
+                              )}
+                              <div className={`absolute inset-x-0 bottom-0 text-white text-[7px] font-black uppercase py-0.5 text-center opacity-0 group-hover:opacity-100 transition-opacity ${isBis ? 'bg-green-600' : 'bg-brand-dark/60'}`}>
+                                {p.label}
                               </div>
-                            </div>
+                              {val && (
+                                <div className={`absolute top-0 right-0 p-0.5 text-white rounded-bl-lg opacity-0 group-hover:opacity-100 transition-opacity ${isBis ? 'bg-green-600' : 'bg-brand-orange'}`}>
+                                  <Pencil className="w-2 h-2" />
+                                </div>
+                              )}
+                            </button>
                           );
                         })}
                       </div>
                     </div>
                   ))}
+                </div>
+              </section>
 
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Flasks</div>
-                    <div className="flex flex-wrap gap-4">
+              <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5">
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-darker mb-4">Mercenary</div>
+                
+                <div className="grid grid-cols-4 gap-2 mb-4">
+                  {(
+                    [
+                      { id: '', label: 'None', img: null },
+                      { id: 'knight', label: 'Knight', img: '/images/cavaleiro.webp' },
+                      { id: 'archer', label: 'Archer', img: '/images/arqueiro.webp' },
+                      { id: 'magister', label: 'Magister', img: '/images/magister.webp' },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setNbMercenaryType(m.id as any)}
+                      className={`group flex flex-col items-center gap-1.5 p-2 rounded-2xl border transition-all ${
+                        nbMercenaryType === m.id
+                          ? 'bg-brand-orange border-brand-orange text-white shadow-md'
+                          : 'bg-white border-brand-dark/10 text-brand-darker hover:border-brand-orange/40'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden transition-colors ${
+                        nbMercenaryType === m.id ? 'bg-white/20' : 'bg-brand-bg'
+                      }`}>
+                        {m.img ? (
+                          <img src={m.img} alt={m.label} className="w-full h-full object-contain pixelated" />
+                        ) : (
+                          <X className={`w-4 h-4 ${nbMercenaryType === m.id ? 'text-white' : 'text-brand-dark/20'}`} />
+                        )}
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-widest leading-none">{m.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {nbMercenaryType && (
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                    {(
+                      [
+                        { slot: 'weapon', label: 'Weapon' },
+                        { slot: 'shield', label: 'Shield' },
+                        { slot: 'helmet', label: 'Helmet' },
+                        { slot: 'chest', label: 'Chest' },
+                        { slot: 'belt', label: 'Belt' },
+                        { slot: 'boots', label: 'Boots' },
+                        { slot: 'gloves', label: 'Gloves' },
+                      ] as const
+                    ).map((m) => {
+                      const val = (nbMercenaryGear as any)[m.slot];
+                      return (
+                        <div key={m.slot} className="space-y-1 text-center">
+                          <button
+                            onClick={() => setActiveItemPick({ target: 'merc', field: m.slot, slot: m.slot, label: `Merc ${m.label}` })}
+                            className="group relative aspect-square w-full rounded-xl bg-white border border-brand-dark/10 flex items-center justify-center overflow-hidden hover:border-brand-orange transition-all shadow-sm"
+                            title={val || `Select ${m.label}`}
+                          >
+                            {val ? (
+                              <img src={getItemImageForSlot(m.slot, val)} alt={val} className="w-full h-full object-contain pixelated p-1" />
+                            ) : (
+                              <Plus className="w-3 h-3 text-brand-dark/20 group-hover:text-brand-orange transition-colors" />
+                            )}
+                          </button>
+                          <div className="text-[8px] font-black uppercase tracking-tighter text-brand-darker/40 leading-tight">{m.label}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {/* Skill Trees Section */}
+              <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5">
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-darker mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    Hero Skills
+                    <div className="px-2 py-0.5 bg-brand-orange/10 rounded-full border border-brand-orange/20">
+                      <span className="text-[10px] font-black text-brand-orange uppercase">Points: {100 - Object.values(nbSkillPoints).reduce((acc, p) => acc + p, 0)} / 100</span>
+                    </div>
+                  </div>
+                  <div className="text-[9px] font-bold text-brand-darker/40 uppercase tracking-widest">L-Click: +1 · R-Click: -1</div>
+                </div>
+                
+                {classSkillsLoading ? (
+                  <div className="py-8 text-center animate-pulse text-xs font-bold text-brand-dark/20 uppercase tracking-widest">Loading Trees...</div>
+                ) : classSkillsData ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {(['tree1', 'tree2'] as const).map((tk) => (
+                      <div key={tk} className="space-y-3">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40 border-b border-brand-dark/5 pb-1">
+                          {classSkillsData[tk === 'tree1' ? 't1' : 't2']}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {classSkillsData[tk].filter(s => s.name || s.icon).map((skill) => {
+                            const points = nbSkillPoints[skill.id] || 0;
+                            return (
+                              <div key={skill.id} className="relative aspect-square">
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    if (e.button === 0) handleSkillPointChange(skill.id, 1);
+                                    if (e.button === 2) handleSkillPointChange(skill.id, -1);
+                                  }}
+                                  onContextMenu={(e) => e.preventDefault()}
+                                  className={`w-full h-full rounded-xl border-2 flex items-center justify-center transition-all overflow-hidden ${
+                                    points > 0 
+                                      ? 'bg-white border-brand-orange shadow-md' 
+                                      : 'bg-white border-brand-dark/5 opacity-40 hover:opacity-100 hover:border-brand-dark/20'
+                                  }`}
+                                  title={skill.name}
+                                >
+                                  {skill.icon ? (
+                                    <img src={skill.icon} alt={skill.name} className="w-full h-full object-contain pixelated p-1" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
+                                  ) : (
+                                    <Circle className="w-4 h-4 text-brand-dark/10" />
+                                  )}
+                                </button>
+                                {points > 0 && (
+                                  <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-brand-orange text-white text-[9px] font-black flex items-center justify-center shadow-sm border border-white">
+                                    {points}
+                                  </div>
+                                )}
+                                {skill.hasSubTree && (
+                                  <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 border border-brand-dark/10 shadow-sm">
+                                    <Plus className="w-2 h-2 text-brand-orange" />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-xs font-bold text-brand-dark/20 uppercase tracking-widest border-2 border-dashed border-brand-dark/5 rounded-2xl">
+                    No skills configured for this class yet.
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="space-y-5">
+              <div className="sticky top-0 space-y-5">
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-darker flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  Live Preview
+                </div>
+                
+                {/* Simplified Preview Card */}
+                <div className="bg-white border-2 border-brand-orange/20 rounded-3xl overflow-hidden shadow-xl">
+                   <div className="bg-brand-dark p-4 flex items-center justify-between">
+                     <div className="flex items-center gap-4">
+                       <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center overflow-hidden">
+                         <img src={`/images/classes/${nbClass}.webp`} alt="" className="w-full h-full object-contain pixelated" />
+                       </div>
+                       <div>
+                         <div className="text-white font-heading font-black uppercase italic tracking-tighter leading-none">{nbTitle || 'Build Title'}</div>
+                         <div className="text-white/50 text-[10px] font-bold uppercase tracking-widest mt-1">{classNames[nbClass]}</div>
+                       </div>
+                     </div>
+                     <span className={`px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest border ${buildTierBadgeClasses(nbType)}`}>
+                       {buildTierLabel(nbType)}
+                     </span>
+                   </div>
+                   
+                   <div className="p-5 space-y-4">
+                     {/* Author Info */}
+                     <div className="flex items-center justify-between border-b border-brand-dark/5 pb-3">
+                       <div className="flex items-center gap-2">
+                         <div className="w-6 h-6 rounded-full bg-brand-bg border border-brand-dark/10 overflow-hidden">
+                           {livePhotoURL ? (
+                             <img src={livePhotoURL} alt="" className="w-full h-full object-cover" />
+                           ) : (
+                             <div className="w-full h-full flex items-center justify-center bg-brand-orange/10 text-brand-orange text-[10px] font-bold">
+                               {liveNick.charAt(0).toUpperCase()}
+                             </div>
+                           )}
+                         </div>
+                         <div className="text-[10px] font-bold text-brand-darker/80">{liveNick}</div>
+                       </div>
+                       <div className="text-[9px] font-bold text-brand-darker/40 uppercase tracking-widest">
+                         {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                       </div>
+                     </div>
+
+                     {/* Stats Preview */}
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                       {(
                         [
-                          { field: 'flask1', label: 'Slot 1' },
-                          { field: 'flask2', label: 'Slot 2' },
-                          { field: 'flask3', label: 'Slot 3' },
-                          { field: 'flask4', label: 'Slot 4' },
+                          { key: 'strength', label: 'STR', color: '#ef4444' },
+                          { key: 'dexterity', label: 'DEX', color: '#22c55e' },
+                          { key: 'intelligence', label: 'INT', color: '#3b82f6' },
+                          { key: 'energy', label: 'ENG', color: '#eab308' },
+                          { key: 'armor', label: 'ARM', color: '#06b6d4' },
+                          { key: 'vitality', label: 'VIT', color: '#f97316' },
                         ] as const
-                      ).map((p) => {
-                        const value = String((nbItems as any)[p.field] || '');
-                        const img = getItemImageForSlot('flask', value);
+                      ).map((it) => (
+                        <div key={it.key} className="rounded-xl p-2 text-center flex flex-col items-center justify-center gap-1" style={{ backgroundColor: `${it.color}15` }}>
+                          <AttributePentagramIcon color={it.color} />
+                          <div className="text-[7px] font-black uppercase tracking-tighter" style={{ color: it.color }}>{it.label}</div>
+                          <div className="text-[10px] font-black" style={{ color: it.color }}>{nbStats[it.key]}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Relics Preview */}
+                    <div className="space-y-1.5">
+                      <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30 border-b border-brand-dark/5 pb-0.5">Relics</div>
+                      <div className="flex flex-wrap gap-2">
+                        {nbRelics.map((r, i) => {
+                          if (!r) return null;
+                          const isFifth = i === 4;
+                          return (
+                            <div key={i} className={`flex items-center gap-2 p-1 pr-2 rounded-lg border shadow-sm ${isFifth ? 'bg-red-50 border-red-100' : 'bg-brand-bg border-brand-dark/5'}`}>
+                              <div className="w-7 h-7 flex items-center justify-center overflow-hidden shrink-0">
+                                <img src={getRelicImageSrc(r)} className="w-6 h-6 object-contain pixelated" alt={r} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className={`text-[7px] font-black uppercase leading-none ${isFifth ? 'text-red-500/60' : 'text-brand-darker/40'}`}>
+                                  {isFifth ? 'Slot 5' : `Slot ${i + 1}`}
+                                </div>
+                                <div className={`text-[9px] font-bold truncate leading-tight ${isFifth ? 'text-red-700' : 'text-brand-darker'}`}>{r}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Items Preview - Show grouped by type with all options */}
+                    <div className="space-y-3">
+                      {(
+                        [
+                          { slot: 'weapon', label: 'Weapon', picks: ['weaponBis', 'weaponOpt1', 'weaponOpt2'] },
+                          { slot: 'shield', label: 'Shield', picks: ['shieldBis', 'shieldOpt1', 'shieldOpt2'] },
+                          { slot: 'helmet', label: 'Helmet', picks: ['helmetBis', 'helmetOpt1', 'helmetOpt2'] },
+                          { slot: 'body', label: 'Body', picks: ['bodyBis', 'bodyOpt1', 'bodyOpt2'] },
+                          { slot: 'gloves', label: 'Gloves', picks: ['glovesBis', 'glovesOpt1', 'glovesOpt2'] },
+                          { slot: 'boots', label: 'Boots', picks: ['bootsBis', 'bootsOpt1', 'bootsOpt2'] },
+                          { slot: 'belt', label: 'Belt', picks: ['beltBis', 'beltOpt1', 'beltOpt2'] },
+                          { slot: 'amulet', label: 'Amulet', picks: ['amuletBis', 'amuletOpt1', 'amuletOpt2'] },
+                          { slot: 'ring', label: 'Rings', picks: ['ringLeftBis', 'ringRightBis', 'ringOpt1', 'ringOpt2'] },
+                          { slot: 'flask', label: 'Flasks', picks: ['flask1', 'flask2', 'flask3', 'flask4'] },
+                        ] as const
+                      ).map((group) => {
+                        const hasAny = group.picks.some(k => (nbItems as any)[k]);
+                        if (!hasAny) return null;
                         return (
-                          <div key={p.field} className="w-[92px]">
-                            <button
-                              type="button"
-                              className="relative w-14 h-14 rounded-2xl overflow-hidden flex items-center justify-center border transition-colors bg-white border-brand-dark/10 hover:border-brand-orange/40 hover:bg-brand-orange/5"
-                              onClick={() =>
-                                setActiveItemPick({
-                                  target: 'items',
-                                  field: p.field,
-                                  slot: 'flask',
-                                  label: `Flasks · ${p.label}`,
-                                })
-                              }
-                              title={value}
-                            >
-                              {img ? (
-                                <img
-                                  src={img}
-                                  alt={value || p.label}
-                                  className="w-full h-full object-contain pixelated"
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => {
-                                    const t = e.currentTarget;
-                                    if (t.dataset.fallbackApplied) return;
-                                    t.dataset.fallbackApplied = '1';
-                                    t.src = ITEM_FALLBACK_ICON;
-                                  }}
-                                />
-                              ) : (
-                                <span className="text-sm font-black text-brand-darker/40">+</span>
-                              )}
-                            </button>
-                            <div className={`mt-1 text-[11px] ${value.trim() ? 'text-brand-darker/70' : 'text-brand-darker/40'} truncate`}>
-                              {p.label}: {value.trim() ? value : 'Select…'}
+                          <div key={group.slot} className="space-y-1.5">
+                            <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30 border-b border-brand-dark/5 pb-0.5">{group.label}</div>
+                            <div className="flex flex-wrap gap-2">
+                              {group.picks.map((pickKey) => {
+                                const val = (nbItems as any)[pickKey];
+                                if (!val) return null;
+                                const isBis = pickKey.toLowerCase().includes('bis');
+                                 return (
+                                   <div key={pickKey} className={`flex items-center gap-2 p-1 pr-2 rounded-lg border shadow-sm ${isBis ? 'bg-green-50 border-green-200' : 'bg-brand-bg border-brand-dark/5'}`}>
+                                     <div className="w-7 h-7 flex items-center justify-center overflow-hidden shrink-0">
+                                       <img src={getItemImageForSlot(group.slot, val)} className="w-6 h-6 object-contain pixelated" alt={val} />
+                                     </div>
+                                     <div className="min-w-0">
+                                       <div className={`text-[7px] font-black uppercase leading-none ${isBis ? 'text-green-600' : 'text-brand-darker/40'}`}>
+                                         {pickKey.replace(group.slot, '').replace(/([A-Z])/g, ' $1').trim() || 'BIS'}
+                                       </div>
+                                       <div className={`text-[9px] font-bold truncate leading-tight ${isBis ? 'text-green-800' : 'text-brand-darker'}`}>{val}</div>
+                                     </div>
+                                   </div>
+                                 );
+                              })}
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                </div>
-              </section>
-            </div>
 
-            <div className="lg:sticky lg:top-6 self-start">
-              <div className="bg-white border border-brand-dark/10 rounded-2xl p-5">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Live preview</div>
-                <div className="font-heading font-black uppercase italic tracking-tight text-brand-darker">
-                  {nbTitle.trim() ? nbTitle.trim() : '(untitled)'}
-                </div>
-                <div className="text-xs text-brand-darker/60 mt-1">
-                  {classNames[nbClass]} · by{' '}
-                  <span className="inline-flex items-center gap-2">
-                    {livePhotoURL ? (
-                      <img
-                        src={livePhotoURL}
-                        alt={liveNick}
-                        className="w-5 h-5 rounded-full object-cover border border-brand-dark/10"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    ) : null}
-                    <span className="text-brand-orange font-bold">{liveNick}</span>
-                  </span>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0">
-                      <img
-                        src={`/images/classes/${nbClass}.webp`}
-                        alt={classNames[nbClass]}
-                        className="w-full h-full object-contain pixelated"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold uppercase tracking-widest text-brand-darker">{classNames[nbClass]}</div>
-                      <div className="text-[11px] text-brand-darker/60">
-                        {buildTierLabel(nbType)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="shrink-0">
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${
-                        nbType === 'starterGame'
-                          ? 'bg-green-100 text-green-800'
-                          : nbType === 'midGame'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {buildTierLabel(nbType)}
-                    </span>
-                  </div>
-                </div>
-
-                {nbExcerpt.trim() ? <div className="mt-4 text-sm text-brand-darker/70">{nbExcerpt.trim()}</div> : null}
-
-                {nbContent.trim() ? (
-                  <div className="mt-5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Details</div>
-                    <div className="text-sm text-brand-darker/70 whitespace-pre-wrap">{nbContent.trim()}</div>
-                  </div>
-                ) : null}
-
-                {totalNbStats(nbStats) > 0 ? (
-                  <div className="mt-5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Attributes</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(
-                        [
-                          { key: 'strength', label: 'STR', color: '#92400e' },
-                          { key: 'dexterity', label: 'DEX', color: '#16a34a' },
-                          { key: 'intelligence', label: 'INT', color: '#db2777' },
-                          { key: 'energy', label: 'ENE', color: '#0284c7' },
-                          { key: 'armor', label: 'ARM', color: '#4b5563' },
-                          { key: 'vitality', label: 'VIT', color: '#dc2626' },
-                        ] as const
-                      )
-                        .map(({ key, label, color }) => ({ key, label, color, value: nbStats[key] || 0 }))
-                        .filter((it) => it.value > 0)
-                        .map((it) => (
-                          <div
-                            key={it.key}
-                            className="flex items-center justify-between bg-brand-bg border rounded-xl px-3 py-2 text-xs"
-                            style={{ borderColor: `${it.color}55` }}
-                          >
-                            <span className="font-bold flex items-center gap-2" style={{ color: it.color }}>
-                              <AttributePentagramIcon color={it.color} />
-                              <span>{it.label}</span>
-                            </span>
-                            <span className="font-black text-brand-darker">{it.value}</span>
+                    {/* Mercenary Preview */}
+                    {nbMercenaryType && (
+                      <div className="space-y-1.5">
+                        <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30 border-b border-brand-dark/5 pb-0.5">Mercenary</div>
+                        <div className="flex items-center gap-3 bg-brand-bg/50 p-2 rounded-xl border border-brand-dark/5">
+                          <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
+                            {nbMercenaryType === 'knight' ? (
+                              <img src="/images/cavaleiro.webp" alt="Knight" className="w-full h-full object-contain pixelated" />
+                            ) : nbMercenaryType === 'archer' ? (
+                              <img src="/images/arqueiro.webp" alt="Archer" className="w-full h-full object-contain pixelated" />
+                            ) : nbMercenaryType === 'magister' ? (
+                              <img src="/images/magister.webp" alt="Magister" className="w-full h-full object-contain pixelated" />
+                            ) : null}
                           </div>
-                        ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {nbRelics.some((r) => String(r ?? '').trim()) ? (
-                  <div className="mt-5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Relics</div>
-                    <div className="flex flex-wrap gap-2">
-                      {nbRelics
-                        .map((r, idx) => ({ idx, name: String(r ?? '').trim() }))
-                        .filter((r) => r.name)
-                        .map((r) => {
-                          const img = getRelicImageSrc(r.name);
-                          return (
-                            <div key={r.idx} className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-2 py-1">
-                              {img ? (
-                                <img
-                                  src={img}
-                                  alt={r.name}
-                                  className="w-5 h-5 object-contain pixelated"
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              ) : null}
-                              <span className="text-[11px] text-brand-darker/80">{r.name}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[9px] font-black text-brand-darker uppercase">{nbMercenaryType}</div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {(['weapon', 'shield', 'helmet', 'chest', 'belt', 'boots', 'gloves'] as const).map(slot => {
+                                const val = (nbMercenaryGear as any)[slot];
+                                if (!val) return null;
+                                return (
+                                  <div key={slot} className="w-6 h-6 rounded-md bg-white border border-brand-dark/5 flex items-center justify-center overflow-hidden" title={`${slot}: ${val}`}>
+                                    <img src={getItemImageForSlot(slot, val)} className="w-4 h-4 object-contain pixelated" alt="" />
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                ) : null}
-
-                {nbCharms.some((c) => String(c ?? '').trim()) ? (
-                  <div className="mt-5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Charms</div>
-                    <div className="flex flex-wrap gap-2">
-                      {nbCharms
-                        .map((c, idx) => ({ idx, name: String(c ?? '').trim() }))
-                        .filter((c) => c.name)
-                        .map((c) => {
-                          const charm = charmByName.get(c.name);
-                          const img = charm?.file ? `/images/${charm.file}` : '';
-                          return (
-                            <div key={c.idx} className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-2 py-1">
-                              {img ? (
-                                <img
-                                  src={img}
-                                  alt={c.name}
-                                  className="w-5 h-5 object-contain pixelated"
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              ) : null}
-                              <span className="text-[11px] text-brand-darker/80">{c.name}</span>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                ) : null}
-
-                {nbMercenaryType ? (
-                  <div className="mt-5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Mercenary</div>
-                    <div className="bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-white border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0">
-                          {nbMercenaryType === 'knight' ? (
-                            <img src="/images/cavaleiro.webp" alt="Knight" className="w-full h-full object-contain pixelated" />
-                          ) : nbMercenaryType === 'archer' ? (
-                            <img src="/images/arqueiro.webp" alt="Archer" className="w-full h-full object-contain pixelated" />
-                          ) : nbMercenaryType === 'magister' ? (
-                            <img src="/images/magister.webp" alt="Magister" className="w-full h-full object-contain pixelated" />
-                          ) : null}
+                          </div>
                         </div>
-                        <div className="font-bold text-brand-darker/80 capitalize">{nbMercenaryType}</div>
                       </div>
-                      {(
-                        [
-                          { key: 'weapon', label: 'Weapon', value: nbMercenaryGear.weapon.trim() },
-                          { key: 'shield', label: 'Shield', value: nbMercenaryGear.shield.trim() },
-                          { key: 'helmet', label: 'Helmet', value: nbMercenaryGear.helmet.trim() },
-                          { key: 'chest', label: 'Chest', value: nbMercenaryGear.chest.trim() },
-                          { key: 'belt', label: 'Belt', value: nbMercenaryGear.belt.trim() },
-                          { key: 'boots', label: 'Boots', value: nbMercenaryGear.boots.trim() },
-                          { key: 'gloves', label: 'Gloves', value: nbMercenaryGear.gloves.trim() },
-                        ] as const
-                      )
-                        .filter((g) => g.value).length ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {(
-                            [
-                              { key: 'weapon', slot: 'weapon', label: 'Weapon', value: nbMercenaryGear.weapon.trim() },
-                              { key: 'shield', slot: 'shield', label: 'Shield', value: nbMercenaryGear.shield.trim() },
-                              { key: 'helmet', slot: 'helmet', label: 'Helmet', value: nbMercenaryGear.helmet.trim() },
-                              { key: 'chest', slot: 'body', label: 'Chest', value: nbMercenaryGear.chest.trim() },
-                              { key: 'belt', slot: 'belt', label: 'Belt', value: nbMercenaryGear.belt.trim() },
-                              { key: 'boots', slot: 'boots', label: 'Boots', value: nbMercenaryGear.boots.trim() },
-                              { key: 'gloves', slot: 'gloves', label: 'Gloves', value: nbMercenaryGear.gloves.trim() },
-                            ] as const
-                          )
-                            .filter((g) => g.value)
-                            .map((g) => {
-                              const img = getItemImageForSlot(g.slot, g.value);
-                              return (
-                                <div key={g.key} className="flex items-center gap-2 bg-white/70 border border-brand-dark/10 rounded-xl px-2 py-1">
-                                  {img ? (
-                                    <img
-                                      src={img}
-                                      alt={g.value}
-                                      className="w-5 h-5 object-contain pixelated"
-                                      referrerPolicy="no-referrer"
-                                      onError={(e) => {
-                                        const t = e.currentTarget;
-                                        if (t.dataset.fallbackApplied) return;
-                                        t.dataset.fallbackApplied = '1';
-                                        t.src = ITEM_FALLBACK_ICON;
-                                      }}
-                                    />
-                                  ) : null}
-                                  <span className="text-[11px] text-brand-darker/80">
-                                    <span className="font-bold">{g.label}:</span> {g.value}
-                                  </span>
+                    )}
+
+                    {/* Content Preview */}
+                    <div className="space-y-2">
+                      {nbExcerpt && (
+                        <div className="text-[11px] text-brand-darker/60 italic border-l-2 border-brand-orange/20 pl-3">
+                          {nbExcerpt}
+                        </div>
+                      )}
+                      <div className="text-[11px] text-brand-darker/80 whitespace-pre-wrap line-clamp-[10]">
+                        {nbContent || 'Your build details will appear here...'}
+                      </div>
+                    </div>
+
+                    {/* Skills Preview */}
+                    {classSkillsData && Object.keys(nbSkillPoints).length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-brand-dark/5">
+                        <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30">Skills Distributed</div>
+                        <div className="space-y-3">
+                          {(['tree1', 'tree2'] as const).map(tk => {
+                            const treeSkills = classSkillsData[tk].filter(s => nbSkillPoints[s.id] > 0);
+                            if (treeSkills.length === 0) return null;
+                            return (
+                              <div key={tk} className="space-y-1">
+                                <div className="text-[7px] font-black uppercase text-brand-orange/60 italic">{classSkillsData[tk === 'tree1' ? 't1' : 't2']}</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {treeSkills.map(s => (
+                                    <div key={s.id} className="flex items-center gap-2 bg-brand-bg rounded-lg p-1 border border-brand-dark/5">
+                                      <div className="w-6 h-6 rounded bg-white flex items-center justify-center overflow-hidden shrink-0 border border-brand-dark/5">
+                                        <img src={s.icon} alt="" className="w-5 h-5 object-contain pixelated" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-[8px] font-bold text-brand-darker truncate leading-none mb-0.5">{s.name}</div>
+                                        <div className="text-[7px] font-black text-brand-orange uppercase">{nbSkillPoints[s.id]} pts</div>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              );
-                            })}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-
-                {Object.values(nbItems).some((v) => String(v || '').trim()) ? (
-                  <div className="mt-5">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Items</div>
-                    <div className="space-y-3">
-                      {(
-                        [
-                          {
-                            slot: 'weapon',
-                            label: 'Weapon',
-                            picks: [
-                              { field: 'weaponBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'weaponOpt1', label: 'Option 1' },
-                              { field: 'weaponOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'shield',
-                            label: 'Shield',
-                            picks: [
-                              { field: 'shieldBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'shieldOpt1', label: 'Option 1' },
-                              { field: 'shieldOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'helmet',
-                            label: 'Helmet',
-                            picks: [
-                              { field: 'helmetBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'helmetOpt1', label: 'Option 1' },
-                              { field: 'helmetOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'body',
-                            label: 'Body',
-                            picks: [
-                              { field: 'bodyBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'bodyOpt1', label: 'Option 1' },
-                              { field: 'bodyOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'gloves',
-                            label: 'Gloves',
-                            picks: [
-                              { field: 'glovesBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'glovesOpt1', label: 'Option 1' },
-                              { field: 'glovesOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'boots',
-                            label: 'Boots',
-                            picks: [
-                              { field: 'bootsBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'bootsOpt1', label: 'Option 1' },
-                              { field: 'bootsOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'belt',
-                            label: 'Belt',
-                            picks: [
-                              { field: 'beltBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'beltOpt1', label: 'Option 1' },
-                              { field: 'beltOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'amulet',
-                            label: 'Amulet',
-                            picks: [
-                              { field: 'amuletBis', label: 'BIS', tag: 'BIS' },
-                              { field: 'amuletOpt1', label: 'Option 1' },
-                              { field: 'amuletOpt2', label: 'Option 2' },
-                            ],
-                          },
-                          {
-                            slot: 'ring',
-                            label: 'Rings',
-                            picks: [
-                              { field: 'ringLeftBis', label: 'BIS Left', tag: 'BIS L' },
-                              { field: 'ringRightBis', label: 'BIS Right', tag: 'BIS R' },
-                              { field: 'ringOpt1', label: 'Option 1' },
-                              { field: 'ringOpt2', label: 'Option 2' },
-                            ],
-                          },
-                        ] as const
-                      )
-                        .map((group) => {
-                          const present = group.picks
-                            .map((p) => String((nbItems as any)[p.field] || '').trim())
-                            .filter(Boolean);
-                          if (present.length === 0) return null;
-                          return (
-                            <div key={group.slot}>
-                              <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">{group.label}</div>
-                              <div className="flex flex-wrap gap-2">
-                                {group.picks.map((p) => {
-                                  const value = String((nbItems as any)[p.field] || '').trim();
-                                  if (!value) return null;
-                                  const img = getItemImageForSlot(group.slot, value);
-                                  const isBis = Boolean((p as any).tag);
-                                  return (
-                                    <div
-                                      key={p.field}
-                                      className={`flex items-center gap-2 border rounded-xl px-2 py-1 text-[11px] ${
-                                        isBis ? 'bg-green-50 border-green-200 text-green-900' : 'bg-brand-bg border-brand-dark/10 text-brand-darker/80'
-                                      }`}
-                                    >
-                                      {img ? (
-                                        <img
-                                          src={img}
-                                          alt={value}
-                                          className="w-5 h-5 object-contain pixelated"
-                                          referrerPolicy="no-referrer"
-                                          onError={(e) => {
-                                            const t = e.currentTarget;
-                                            if (t.dataset.fallbackApplied) return;
-                                            t.dataset.fallbackApplied = '1';
-                                            t.src = ITEM_FALLBACK_ICON;
-                                          }}
-                                        />
-                                      ) : null}
-                                      <span className="font-bold">{(p as any).tag ? (p as any).tag : p.label}:</span> {value}
-                                    </div>
-                                  );
-                                })}
                               </div>
-                            </div>
-                          );
-                        })
-                        .filter(Boolean)}
-
-                      {(() => {
-                        const flasks = [nbItems.flask1, nbItems.flask2, nbItems.flask3, nbItems.flask4].map((f) => String(f || '').trim());
-                        const present = flasks.filter(Boolean);
-                        if (present.length === 0) return null;
-                        return (
-                          <div>
-                            <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/50 mb-2">Flasks</div>
-                            <div className="flex flex-wrap gap-2">
-                              {flasks
-                                .map((name, idx) => ({ idx, name }))
-                                .filter((f) => f.name)
-                                .map((f) => {
-                                  const img = getItemImageForSlot('flask', f.name);
-                                  return (
-                                    <div key={f.idx} className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-2 py-1 text-[11px] text-brand-darker/80">
-                                      {img ? (
-                                        <img
-                                          src={img}
-                                          alt={f.name}
-                                          className="w-5 h-5 object-contain pixelated"
-                                          referrerPolicy="no-referrer"
-                                          onError={(e) => {
-                                            const t = e.currentTarget;
-                                            if (t.dataset.fallbackApplied) return;
-                                            t.dataset.fallbackApplied = '1';
-                                            t.src = ITEM_FALLBACK_ICON;
-                                          }}
-                                        />
-                                      ) : null}
-                                      <span className="font-bold">Slot {f.idx + 1}:</span> {f.name}
-                                    </div>
-                                  );
-                                })}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : null}
+                </div>
 
-                <div className="mt-6 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNewBuildOpen(false)}
-                    disabled={submitting}
-                    className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void submitBuild()}
-                    disabled={submitting}
-                    className="inline-flex items-center gap-2 bg-brand-orange text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-orange-dark transition-colors disabled:opacity-60"
-                  >
-                    {submitting ? 'Submitting...' : 'Send for moderation'}
-                  </button>
+                <div className="bg-brand-orange/5 border border-brand-orange/20 rounded-2xl p-4 text-[11px] text-brand-orange font-medium">
+                  <strong>Tip:</strong> Your build will be reviewed by our team before appearing on the public list. Make sure to provide clear details!
                 </div>
               </div>
             </div>
           </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-brand-dark/10">
+            <button onClick={() => setNewBuildOpen(false)} className="px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest text-brand-darker hover:bg-brand-dark/5 transition-colors">Cancel</button>
+            <button onClick={submitBuild} disabled={submitting} className="orange-button px-8 h-11 text-xs">{submitting ? 'Saving...' : 'Save Build'}</button>
+          </div>
         </div>
       </Modal>
+
+      {/* Relic Picker Modal */}
+      {activeRelicSlot !== null && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto pt-20" onClick={(e) => e.target === e.currentTarget && setActiveRelicSlot(null)}>
+          <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-brand-dark/10 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-widest">Select Relic (Slot {activeRelicSlot + 1})</span>
+              <button onClick={() => setActiveRelicSlot(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-brand-bg transition-colors"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4">
+              <input value={relicSearch} onChange={(e) => setRelicSearch(e.target.value)} placeholder="Search relics..." className="w-full bg-brand-bg border border-brand-dark/10 rounded-2xl py-3 px-4 text-sm mb-4 outline-none focus:border-brand-orange" autoFocus />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto pr-2">
+                {filteredRelicOptions.map(r => (
+                  <button key={r} onClick={() => { const next = [...nbRelics]; next[activeRelicSlot] = r; setNbRelics(next); setActiveRelicSlot(null); }} className="flex items-center gap-3 p-2 rounded-xl hover:bg-brand-orange/5 text-left transition-colors">
+                    <div className="w-8 h-8 shrink-0 overflow-hidden"><img src={getRelicImageSrc(r)} alt="" className="w-full h-full object-contain pixelated" /></div>
+                    <span className="text-xs font-bold text-brand-darker truncate">{r}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Item Picker Modal */}
+      {activeItemPick && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto pt-20" onClick={(e) => e.target === e.currentTarget && setActiveItemPick(null)}>
+          <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-brand-dark/10 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-widest">Select {activeItemPick.label}</span>
+              <button onClick={() => setActiveItemPick(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-brand-bg transition-colors"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4">
+              <input value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Search items..." className="w-full bg-brand-bg border border-brand-dark/10 rounded-2xl py-3 px-4 text-sm mb-4 outline-none focus:border-brand-orange" autoFocus />
+              {itemLoading ? <div className="py-12 text-center text-xs font-bold animate-pulse">Loading items...</div> : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto pr-2">
+                  {filteredItemOptions.map(it => (
+                    <button key={it.id} onClick={() => applyPickedItem(it.name || it.id)} className="flex items-center gap-3 p-2 rounded-xl hover:bg-brand-orange/5 text-left transition-colors">
+                      <div className="w-8 h-8 shrink-0 bg-brand-bg rounded-lg overflow-hidden flex items-center justify-center"><img src={getItemImage(it)} alt="" className="w-full h-full object-contain pixelated" onError={e => e.currentTarget.src = 'https://herosiege.wiki.gg/images/Item_Chest.png'} /></div>
+                      <span className="text-xs font-bold text-brand-darker truncate">{it.name || it.id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </StandardPage>
   );
 }
+

@@ -1,6 +1,6 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer } from 'lucide-react';
+import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
@@ -8,6 +8,7 @@ import { AdminSidebarLink } from '../features/admin/AdminSidebarLink';
 import { AdminSettingsPanel } from '../features/admin/AdminSettingsPanel';
 import { AdminBlogPanel } from '../features/admin/AdminBlogPanel';
 import { AdminContactPanel } from '../features/admin/AdminContactPanel';
+import { AdminHeroSkillsPanel } from '../features/admin/AdminHeroSkillsPanel';
 import { UsersTable } from '../features/admin/UsersTable';
 import { useAuth } from '../features/auth/AuthProvider';
 import { Modal } from '../components/Modal';
@@ -836,9 +837,13 @@ function AdminEtherTreePanel() {
             <label className="block">
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Máximo de Pontos</div>
               <input
-                type="number"
-                value={maxPoints || ''}
-                onChange={(e) => setMaxPoints(e.target.value === '' ? 0 : Number(e.target.value))}
+                type="text"
+                inputMode="numeric"
+                value={maxPoints}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setMaxPoints(val === '' ? 0 : Number(val));
+                }}
                 disabled={configLoading || infinitePoints}
                 className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               />
@@ -1517,9 +1522,16 @@ function AdminIncarnationTreePanel() {
     setSavingConfig(true);
     setFlash(null);
     try {
+      const finalMaxPoints = Number(maxPoints);
       await setDoc(
         doc(firestore, 'config', 'incarnation_tree'),
-        { maxPoints: Number(maxPoints) || 0, infinitePoints, maintenanceEnabled, maintenanceMessage: maintenanceMessage.trim(), updatedAt: serverTimestamp() },
+        { 
+          maxPoints: isNaN(finalMaxPoints) ? 60 : finalMaxPoints, 
+          infinitePoints, 
+          maintenanceEnabled, 
+          maintenanceMessage: maintenanceMessage.trim(), 
+          updatedAt: serverTimestamp() 
+        },
         { merge: true },
       );
       setFlash({ type: 'ok', text: 'Configuração salva.' });
@@ -1804,9 +1816,13 @@ function AdminIncarnationTreePanel() {
             <label className="block">
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Máximo de Pontos</div>
               <input
-                type="number"
-                value={maxPoints || ''}
-                onChange={(e) => setMaxPoints(e.target.value === '' ? 0 : Number(e.target.value))}
+                type="text"
+                inputMode="numeric"
+                value={maxPoints}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setMaxPoints(val === '' ? 0 : Number(val));
+                }}
                 disabled={configLoading || infinitePoints}
                 className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               />
@@ -2635,7 +2651,8 @@ export function AdminPage() {
                   <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
-                </nav>
+                <AdminSidebarLink href="/admin/hero-skills" label="Hero Skills" icon={<Zap className="w-5 h-5" />} />
+              </nav>
             </div>
 
             <div className="mt-6 bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
@@ -2656,6 +2673,7 @@ export function AdminPage() {
               <Route path="blog" element={<AdminBlogPanel />} />
               <Route path="team" element={<AdminTeamPanel />} />
               <Route path="contact" element={<AdminContactPanel />} />
+              <Route path="hero-skills" element={<AdminHeroSkillsPanel />} />
               <Route path="*" element={<Navigate to="/admin/users" replace />} />
             </Routes>
           </section>
