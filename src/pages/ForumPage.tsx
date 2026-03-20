@@ -47,7 +47,7 @@ import {
 import { Modal } from '../components/Modal';
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
-import { SubSkillTree } from '../components/SubSkillTree';
+import { SubSkillTree, SubSkillTreePreview } from '../components/SubSkillTree';
 import { classKeys, classNames, type ClassKey } from '../data/tierlist';
 import { firestore } from '../firebase';
 import { useAuth } from '../features/auth/AuthProvider';
@@ -1874,6 +1874,50 @@ export function ForumPage() {
                               </div>
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Sub Skill Trees Preview */}
+                    {Object.keys(nbSubSkillPoints).some(id => {
+                      const pts = nbSubSkillPoints[id] || {};
+                      return Object.values(pts).reduce((a, b) => a + Number(b || 0), 0) > 0;
+                    }) && (
+                      <div className="space-y-4 pt-4 border-t border-brand-dark/5">
+                        <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30">Sub Skill Trees</div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {Object.entries(nbSubSkillPoints).map(([skillId, points]) => {
+                            if (!points || typeof points !== 'object') return null;
+                            const total = Object.values(points).reduce((a, b) => a + Number(b || 0), 0);
+                            if (total === 0) return null;
+
+                            // Find skill name and icon
+                            let skillName = 'Unknown';
+                            let skillIcon = '';
+                            if (classSkillsData) {
+                              [classSkillsData.tree1, classSkillsData.tree2].forEach(tree => {
+                                if (Array.isArray(tree)) {
+                                  const s = tree.find(sk => sk && sk.id === skillId);
+                                  if (s) {
+                                    skillName = s.name || 'Unknown Skill';
+                                    skillIcon = s.icon || '';
+                                  }
+                                }
+                              });
+                            }
+
+                            return (
+                              <div key={skillId} className="space-y-2 bg-brand-bg/30 p-2 rounded-xl border border-brand-dark/5">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded bg-white border border-brand-dark/10 flex items-center justify-center p-0.5">
+                                    <img src={skillIcon} alt="" className="w-full h-full object-contain pixelated" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
+                                  </div>
+                                  <span className="text-[9px] font-bold text-brand-darker uppercase truncate">{skillName}</span>
+                                </div>
+                                <SubSkillTreePreview skillIcon={skillIcon} points={points} />
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

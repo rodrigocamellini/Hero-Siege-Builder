@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { X, RotateCcw, Check, AlertCircle } from 'lucide-react';
+import { X, RotateCcw, Check } from 'lucide-react';
 import mapaData from '../../mapa_v2.json';
 
 interface Node {
@@ -25,70 +25,174 @@ interface SubSkillTreeProps {
   readOnly?: boolean;
 }
 
-export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, readOnly }: SubSkillTreeProps) {
+const MAX_TOTAL_POINTS = 20;
+const VIEWBOX = "700 120 600 550";
+
+/**
+ * Shared logic to calculate unlocked nodes
+ */
+function getUnlockedNodes(nodes: Node[], links: Link[], points: Record<number, number>) {
+  if (!nodes || !links) return new Set<number>([1]);
+  
+  const unlocked = new Set<number>([1]);
+  
+  // Initial connections are always unlocked
+  links.forEach(link => {
+    if (link.source === 1) unlocked.add(link.target);
+    if (link.target === 1) unlocked.add(link.source);
+  });
+
+  let changed = true;
+  let iterations = 0;
+  const MAX_ITERATIONS = 100; // Safety break
+
+  while (changed && iterations < MAX_ITERATIONS) {
+    changed = false;
+    iterations++;
+    
+    for (const link of links) {
+      // Source -> Target
+      if (unlocked.has(link.source) && !unlocked.has(link.target)) {
+        const sNode = nodes.find(n => n.id === link.source);
+        const sPoints = Number(points[link.source] || (points as any)[String(link.source)] || 0);
+        const req = sNode?.type === 'purple' ? 1 : 2;
+        if (sPoints >= req) {
+          unlocked.add(link.target);
+          changed = true;
+        }
+      }
+      // Target -> Source
+      if (unlocked.has(link.target) && !unlocked.has(link.source)) {
+        const tNode = nodes.find(n => n.id === link.target);
+        const tPoints = Number(points[link.target] || (points as any)[String(link.target)] || 0);
+        const req = tNode?.type === 'purple' ? 1 : 2;
+        if (tPoints >= req) {
+          unlocked.add(link.source);
+          changed = true;
+        }
+      }
+    }
+  }
+  return unlocked;
+}
+
+/**
+ * COMPACT PREVIEW COMPONENT
+ * Used in Live Preview and Build Page
+ */
+export function SubSkillTreePreview({ skillIcon, points }: { skillIcon: string; points: Record<number, number> }) {
+  const ptsMap = points || {};
   const nodes = mapaData.nodes as Node[];
   const links = mapaData.links as Link[];
-  const MAX_TOTAL_POINTS = 20;
+  const unlockedNodes = useMemo(() => getUnlockedNodes(nodes, links, ptsMap), [ptsMap]);
 
+  return (
+    <div className="w-full aspect-[600/550] bg-brand-darker/40 rounded-2xl border border-white/5 overflow-hidden relative group/tree">
+      <svg viewBox={VIEWBOX} className="w-full h-full drop-shadow-xl">
+        <defs>
+          <clipPath id="previewInitialClip">
+            <circle cx="0" cy="0" r="22" />
+          </clipPath>
+        </defs>
+        
+        {links.map((link, i) => {
+          const s = nodes.find(n => n.id === link.source);
+          const t = nodes.find(n => n.id === link.target);
+          if (!s || !t) return null;
+          
+          const sPoints = Number(ptsMap[s.id] || (ptsMap as any)[String(s.id)] || 0);
+          const tPoints = Number(ptsMap[t.id] || (ptsMap as any)[String(t.id)] || 0);
+          
+          // A link is active if either end has enough points to unlock the other end,
+          // provided that end itself is unlocked.
+          const sCanUnlock = unlockedNodes.has(s.id) && (s.isInitial || sPoints >= (s.type === 'purple' ? 1 : 2));
+          const tCanUnlock = unlockedNodes.has(t.id) && (t.isInitial || tPoints >= (t.type === 'purple' ? 1 : 2));
+          const isActive = sCanUnlock || tCanUnlock;
+
+          return (
+            <line
+              key={i}
+              x1={s.x} y1={s.y}
+              x2={t.x} y2={t.y}
+              stroke={isActive ? '#f97316' : 'rgba(255,255,255,0.05)'}
+              strokeWidth={isActive ? "4" : "2"}
+              strokeDasharray={isActive ? "none" : "4 4"}
+            />
+          );
+        })}
+
+        {nodes.map(node => {
+          const isUnlocked = unlockedNodes.has(node.id);
+          const pts = Number(ptsMap[node.id] || (ptsMap as any)[String(node.id)] || 0);
+          const isInitial = node.isInitial;
+          const hasPoints = pts > 0;
+
+          return (
+            <g key={node.id} className={!isInitial && !hasPoints ? 'opacity-20 grayscale' : ''}>
+              <circle
+                cx={node.x} cy={node.y}
+                r={isInitial || node.type === 'purple' ? "22" : "16"}
+                fill={isInitial ? "#f97316" : hasPoints ? (node.type === 'purple' ? '#a855f7' : '#22c55e') : '#1e1b4b'}
+                stroke={isInitial ? "white" : hasPoints ? (node.type === 'purple' ? '#a855f7' : '#22c55e') : 'rgba(255,255,255,0.1)'}
+                strokeWidth="2"
+              />
+              {hasPoints && (
+                <text
+                  x={node.x} y={Number(node.y) + 7}
+                  textAnchor="middle"
+                  fill="white"
+                  className="text-[20px] font-black italic select-none drop-shadow-md"
+                >
+                  {pts}
+                </text>
+              )}
+              {isInitial && (
+                <g transform={`translate(${node.x}, ${node.y})`}>
+                  <image
+                    href={skillIcon}
+                    x="-22" y="-22"
+                    width="44" height="44"
+                    className="pixelated"
+                    clipPath="url(#previewInitialClip)"
+                    onError={e => e.currentTarget.setAttribute('href', '/images/herosiege.png')}
+                  />
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+/**
+ * FULL INTERACTIVE MODAL COMPONENT
+ */
+export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, readOnly }: SubSkillTreeProps) {
+  const ptsMap = points || {};
+  const nodes = mapaData.nodes as Node[];
+  const links = mapaData.links as Link[];
   const [confirmReset, setConfirmReset] = useState(false);
 
   const totalSpent = useMemo(() => {
-    return Object.values(points).reduce((sum, p) => sum + Number(p || 0), 0);
-  }, [points]);
+    return Object.values(ptsMap).reduce((sum, p) => sum + Number(p || 0), 0);
+  }, [ptsMap]);
 
-  // Calculate which nodes are unlocked (Bidirectional search)
-  const unlockedNodes = useMemo(() => {
-    const unlocked = new Set<number>([1]); // Node 1 is always unlocked (initial)
-    
-    // Nodes directly connected to initial node (1) are always unlocked
-    links.forEach(link => {
-      if (link.source === 1) unlocked.add(link.target);
-      if (link.target === 1) unlocked.add(link.source);
-    });
-
-    let changed = true;
-    while (changed) {
-      changed = false;
-      links.forEach(link => {
-        // Check Source -> Target
-        if (unlocked.has(link.source) && !unlocked.has(link.target)) {
-          const sNode = nodes.find(n => n.id === link.source);
-          const sPoints = Number(points[link.source] || (points as any)[String(link.source)] || 0);
-          const req = sNode?.type === 'purple' ? 1 : 2;
-          if (sPoints >= req) {
-            unlocked.add(link.target);
-            changed = true;
-          }
-        }
-        // Check Target -> Source (Bidirectional)
-        if (unlocked.has(link.target) && !unlocked.has(link.source)) {
-          const tNode = nodes.find(n => n.id === link.target);
-          const tPoints = Number(points[link.target] || (points as any)[String(link.target)] || 0);
-          const req = tNode?.type === 'purple' ? 1 : 2;
-          if (tPoints >= req) {
-            unlocked.add(link.source);
-            changed = true;
-          }
-        }
-      });
-    }
-    return unlocked;
-  }, [points, nodes, links]);
+  const unlockedNodes = useMemo(() => getUnlockedNodes(nodes, links, ptsMap), [ptsMap, nodes, links]);
 
   const handlePointChange = (nodeId: number, delta: number) => {
     if (readOnly || !onChange) return;
     const node = nodes.find(n => n.id === nodeId);
     if (!node || node.isInitial) return;
 
-    const currentPoints = Number(points[nodeId] || (points as any)[String(nodeId)] || 0);
+    const currentPoints = Number(ptsMap[nodeId] || (ptsMap as any)[String(nodeId)] || 0);
     const maxPoints = node.type === 'purple' ? 3 : 5;
     
-    // Rule: Total points limit
     if (delta > 0 && totalSpent >= MAX_TOTAL_POINTS) return;
 
-    // Rule: Only one purple node can have points
     if (delta > 0 && node.type === 'purple') {
-      const otherPurpleWithPoints = Object.entries(points).find(([id, pts]) => {
+      const otherPurpleWithPoints = Object.entries(ptsMap).find(([id, pts]) => {
         const n = nodes.find(node => node.id === Number(id));
         return n?.type === 'purple' && !n.isInitial && Number(id) !== nodeId && Number(pts) > 0;
       });
@@ -96,17 +200,15 @@ export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, 
     }
 
     const nextPoints = Math.max(0, Math.min(maxPoints, currentPoints + delta));
-    
     if (nextPoints === currentPoints) return;
 
-    const nextState = { ...points };
+    const nextState = { ...ptsMap };
     if (nextPoints === 0) {
       delete nextState[nodeId];
       delete (nextState as any)[String(nodeId)];
     } else {
       nextState[nodeId] = nextPoints;
     }
-
     onChange(nextState);
   };
 
@@ -115,8 +217,6 @@ export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, 
     onChange({});
     setConfirmReset(false);
   };
-
-  const viewBox = "700 120 600 550";
 
   return (
     <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
@@ -139,27 +239,15 @@ export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, 
                 {confirmReset ? (
                   <div className="flex items-center gap-2 animate-in slide-in-from-right-4">
                     <span className="text-[10px] font-black uppercase tracking-widest text-red-500 italic">Are you sure?</span>
-                    <button
-                      onClick={resetTree}
-                      className="w-8 h-8 rounded-lg bg-red-600 hover:bg-red-700 flex items-center justify-center text-white transition-colors"
-                      title="Confirm Reset"
-                    >
+                    <button onClick={resetTree} className="w-8 h-8 rounded-lg bg-red-600 hover:bg-red-700 flex items-center justify-center text-white transition-colors">
                       <Check className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => setConfirmReset(false)}
-                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-                      title="Cancel"
-                    >
+                    <button onClick={() => setConfirmReset(false)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setConfirmReset(true)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-red-600/20 text-white/60 hover:text-red-500 transition-all group"
-                    title="Reset Tree"
-                  >
+                  <button onClick={() => setConfirmReset(true)} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-red-600/20 text-white/60 hover:text-red-500 transition-all group">
                     <RotateCcw className="w-4 h-4 group-hover:rotate-[-45deg] transition-transform" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Reset</span>
                   </button>
@@ -182,15 +270,23 @@ export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, 
 
         {/* Tree Area */}
         <div className="flex-1 relative overflow-hidden bg-[url('/images/bg-pattern.png')] bg-repeat">
-          <svg viewBox={viewBox} className="w-full h-full drop-shadow-2xl">
+          <svg viewBox={VIEWBOX} className="w-full h-full drop-shadow-2xl">
+            <defs>
+              <clipPath id="initialNodeClip">
+                <circle cx="0" cy="0" r="22" />
+              </clipPath>
+            </defs>
             {links.map((link, i) => {
               const s = nodes.find(n => n.id === link.source);
               const t = nodes.find(n => n.id === link.target);
               if (!s || !t) return null;
               
-              const isUnlocked = unlockedNodes.has(t.id);
-              const sourcePoints = Number(points[s.id] || (points as any)[String(s.id)] || 0);
-              const isActive = isUnlocked && (s.isInitial || sourcePoints >= (s.type === 'purple' ? 1 : 2));
+              const sPoints = Number(ptsMap[s.id] || (ptsMap as any)[String(s.id)] || 0);
+              const tPoints = Number(ptsMap[t.id] || (ptsMap as any)[String(t.id)] || 0);
+              
+              const sCanUnlock = unlockedNodes.has(s.id) && (s.isInitial || sPoints >= (s.type === 'purple' ? 1 : 2));
+              const tCanUnlock = unlockedNodes.has(t.id) && (t.isInitial || tPoints >= (t.type === 'purple' ? 1 : 2));
+              const isActive = sCanUnlock || tCanUnlock;
 
               return (
                 <line
@@ -218,53 +314,36 @@ export function SubSkillTree({ skillName, skillIcon, points, onChange, onClose, 
                   onClick={() => !readOnly && isUnlocked && !isInitial && handlePointChange(node.id, 1)} 
                   onContextMenu={(e) => { e.preventDefault(); !readOnly && isUnlocked && !isInitial && handlePointChange(node.id, -1); }}
                 >
-                  {/* Outer Glow */}
                   {pts > 0 && (
                     <circle cx={node.x} cy={node.y} r={node.type === 'purple' ? "28" : "22"} fill={node.type === 'purple' ? "rgba(168,85,247,0.2)" : "rgba(34,197,94,0.2)"} className="animate-pulse" />
                   )}
-                  
-                  {/* Hover Glow */}
                   {isUnlocked && !isInitial && !readOnly && (
                     <circle cx={node.x} cy={node.y} r={node.type === 'purple' ? "26" : "20"} fill="white" className="opacity-0 group-hover:opacity-10 transition-opacity" />
                   )}
-                  
-                  {/* Base Circle */}
                   <circle
                     cx={node.x} cy={node.y}
-                    r={node.type === 'purple' ? "22" : "16"}
+                    r={isInitial || node.type === 'purple' ? "22" : "16"}
                     fill={isInitial ? "#f97316" : pts > 0 ? (node.type === 'purple' ? '#a855f7' : '#22c55e') : '#1e1b4b'}
                     stroke={isInitial ? "white" : isUnlocked ? (node.type === 'purple' ? '#a855f7' : '#22c55e') : 'rgba(255,255,255,0.2)'}
                     strokeWidth={isUnlocked && !isInitial ? "3" : "2"}
                     className="group-hover:stroke-white transition-all"
                   />
-
-                  {/* Points Label */}
                   {!isInitial && (
-                    <text
-                      x={node.x} y={Number(node.y) + 5}
-                      textAnchor="middle"
-                      fill="white"
-                      className="text-[12px] font-black pointer-events-none select-none italic"
-                    >
+                    <text x={node.x} y={Number(node.y) + 5} textAnchor="middle" fill="white" className="text-[12px] font-black pointer-events-none select-none italic">
                       {pts}/{max}
                     </text>
                   )}
-
-                  {/* Initial Icon */}
                   {isInitial && (
-                    <image
-                      href={skillIcon}
-                      x={Number(node.x) - 12} y={Number(node.y) - 12}
-                      width="24" height="24"
-                      className="pixelated"
-                    />
+                    <g transform={`translate(${node.x}, ${node.y})`}>
+                      <image href={skillIcon} x="-22" y="-22" width="44" height="44" className="pixelated" clipPath="url(#initialNodeClip)" onError={e => e.currentTarget.setAttribute('href', '/images/herosiege.png')} />
+                    </g>
                   )}
                 </g>
               );
             })}
           </svg>
 
-          {/* Instructions Overlay */}
+          {/* Instructions */}
           <div className="absolute bottom-6 left-6 right-6 flex flex-col md:flex-row items-center justify-between gap-4 pointer-events-none">
             <div className="bg-black/60 backdrop-blur-md border border-white/10 p-4 rounded-2xl pointer-events-auto space-y-1">
               <div className="flex items-center gap-2">

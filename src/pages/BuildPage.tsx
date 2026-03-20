@@ -8,7 +8,7 @@ import { Star, Pencil, Calendar, Plus, Circle, ArrowLeft, Trash2 } from 'lucide-
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
 import { Modal } from '../components/Modal';
-import { SubSkillTree } from '../components/SubSkillTree';
+import { SubSkillTree, SubSkillTreePreview } from '../components/SubSkillTree';
 import { classNames, type ClassKey } from '../data/tierlist';
 import { firestore } from '../firebase';
 import { useAuth } from '../features/auth/AuthProvider';
@@ -613,6 +613,7 @@ export function BuildPage() {
           relics: Array.isArray(data?.relics) ? (data.relics as any[]).map(r => safeString(r) || null) : null,
           charms: Array.isArray(data?.charms) ? (data.charms as any[]).map(c => safeString(c)).filter(Boolean) : null,
           skillPoints: data?.skillPoints && typeof data.skillPoints === 'object' ? (data.skillPoints as any) : null,
+          subSkillPoints: data?.subSkillPoints && typeof data.subSkillPoints === 'object' ? (data.subSkillPoints as any) : null,
           mercenaryType: safeMercenaryType(data?.mercenaryType),
           mercenaryGear: data?.mercenaryGear && typeof data.mercenaryGear === 'object' ? {
             weapon: safeString(data.mercenaryGear.weapon),
@@ -946,73 +947,6 @@ export function BuildPage() {
             </div>
           ) : null}
 
-          {build.skillPoints && classSkillsData && (
-            <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-8 border-b border-brand-orange/10 pb-4">
-                <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm flex items-center gap-2">
-                  <Circle className="w-2 h-2 fill-current" />
-                  Hero Skills
-                </div>
-                <div className="px-3 py-1 bg-brand-orange/10 rounded-full border border-brand-orange/20">
-                  <span className="text-xs font-black text-brand-orange uppercase italic">
-                    {Object.values(build.skillPoints || {}).reduce((acc, p) => acc + (Number(p) || 0), 0)} / 100
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                {(['tree1', 'tree2'] as const).map(tk => (
-                  <div key={tk} className="space-y-4">
-                    <div className="text-sm font-black uppercase tracking-widest text-brand-orange border-b-2 border-brand-orange/10 pb-2 italic">
-                      {classSkillsData[tk === 'tree1' ? 't1' : 't2']}
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {(classSkillsData[tk] || []).map(s => {
-                        if (!s) return null;
-                        const pts = (build.skillPoints as any)?.[s.id] || 0;
-                        if (!s.name && !s.icon) return <div key={s.id || Math.random()} className="aspect-square rounded-xl bg-brand-bg/50 border border-brand-dark/5 opacity-50" />;
-                        return (
-                          <div key={s.id} className="relative aspect-square group">
-                            <div className={`w-full h-full rounded-2xl border-2 flex items-center justify-center transition-all ${pts > 0 ? 'bg-white border-brand-orange shadow-md' : 'bg-brand-bg border-brand-dark/5 opacity-20 grayscale'}`}>
-                              <img src={s.icon} alt={s.name} className="w-full h-full object-contain pixelated p-1.5" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
-                            </div>
-                            {s.hasSubTree && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSubTreeSkill({ id: s.id, name: s.name, icon: s.icon });
-                                }}
-                                className="absolute top-1 right-1 w-5 h-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md flex items-center justify-center shadow-md transition-colors z-20"
-                                title="View Sub Skill Tree"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                            )}
-                            {pts > 0 && (
-                              <div className="absolute top-1 left-1 w-5 h-5 rounded-md bg-red-600 text-white text-[11px] font-black flex items-center justify-center shadow-md z-10 pointer-events-none italic">
-                                {pts}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {subTreeSkill && (
-            <SubSkillTree
-              skillName={subTreeSkill.name}
-              skillIcon={subTreeSkill.icon}
-              points={(build.subSkillPoints as any)?.[subTreeSkill.id] || {}}
-              onClose={() => setSubTreeSkill(null)}
-              readOnly
-            />
-          )}
-
           {build.mercenaryType && (
             <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
               <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-4 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
@@ -1025,31 +959,31 @@ export function BuildPage() {
                 </div>
                 <div className="font-bold text-brand-darker capitalize">{build.mercenaryType}</div>
               </div>
-                  {build.mercenaryGear && (
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['weapon', 'shield', 'helmet', 'chest', 'belt', 'boots', 'gloves'] as const).map(slot => {
-                        const val = safeString((build.mercenaryGear as any)?.[slot]).trim();
-                        if (!val) return null;
-                        const itemSlot = slot === 'chest' ? 'body' : slot;
-                        const img = getItemImageForSlot(itemSlot, val);
-                        return (
-                          <div key={slot} className="flex items-center gap-3 p-3 bg-brand-bg/50 border border-brand-dark/5 rounded-xl flex-1 min-w-[140px] hover:shadow-md transition-all">
-                            <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1.5 shadow-sm group-hover:scale-110 transition-transform">
-                              {img ? (
-                                <img src={img} alt={val} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
-                              ) : (
-                                <div className="w-5 h-5 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin" />
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-[8px] font-black uppercase tracking-widest text-brand-orange border-l-2 border-brand-orange pl-1 mb-0.5">{slot === 'chest' ? 'Body' : slot}</div>
-                              <div className="text-xs font-bold text-brand-darker truncate">{val}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+              {build.mercenaryGear && (
+                <div className="grid grid-cols-2 gap-2">
+                  {(['weapon', 'shield', 'helmet', 'chest', 'belt', 'boots', 'gloves'] as const).map(slot => {
+                    const val = safeString((build.mercenaryGear as any)?.[slot]).trim();
+                    if (!val) return null;
+                    const itemSlot = slot === 'chest' ? 'body' : slot;
+                    const img = getItemImageForSlot(itemSlot, val);
+                    return (
+                      <div key={slot} className="flex items-center gap-3 p-3 bg-brand-bg/50 border border-brand-dark/5 rounded-xl flex-1 min-w-[140px] hover:shadow-md transition-all">
+                        <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1.5 shadow-sm group-hover:scale-110 transition-transform">
+                          {img ? (
+                            <img src={img} alt={val} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
+                          ) : (
+                            <div className="w-5 h-5 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[8px] font-black uppercase tracking-widest text-brand-orange border-l-2 border-brand-orange pl-1 mb-0.5">{slot === 'chest' ? 'Body' : slot}</div>
+                          <div className="text-xs font-bold text-brand-darker truncate">{val}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -1120,6 +1054,94 @@ export function BuildPage() {
                 Full Details
               </div>
               <div className="text-sm text-brand-darker/80 leading-relaxed whitespace-pre-wrap">{renderFormattedContent(build.content)}</div>
+            </div>
+          )}
+
+          {build.skillPoints && classSkillsData && (
+            <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-8 border-b border-brand-orange/10 pb-4">
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm flex items-center gap-2">
+                  <Circle className="w-2 h-2 fill-current" />
+                  Hero Skills
+                </div>
+                <div className="px-3 py-1 bg-brand-orange/10 rounded-full border border-brand-orange/20">
+                  <span className="text-xs font-black text-brand-orange uppercase italic">
+                    {Object.values(build.skillPoints || {}).reduce((acc, p) => acc + (Number(p) || 0), 0)} / 100
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                {(['tree1', 'tree2'] as const).map(tk => (
+                  <div key={tk} className="space-y-4">
+                    <div className="text-sm font-black uppercase tracking-widest text-brand-orange border-b-2 border-brand-orange/10 pb-2 italic">
+                      {classSkillsData[tk === 'tree1' ? 't1' : 't2']}
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {(classSkillsData[tk] || []).map(s => {
+                        if (!s) return null;
+                        const pts = (build.skillPoints as any)?.[s.id] || 0;
+                        if (!s.name && !s.icon) return <div key={s.id || Math.random()} className="aspect-square rounded-xl bg-brand-bg/50 border border-brand-dark/5 opacity-50" />;
+                        return (
+                          <div key={s.id} className="relative aspect-square group">
+                            <div className={`w-full h-full rounded-2xl border-2 flex items-center justify-center transition-all ${pts > 0 ? 'bg-white border-brand-orange shadow-md' : 'bg-brand-bg border-brand-dark/5 opacity-20 grayscale'}`}>
+                              <img src={s.icon} alt={s.name} className="w-full h-full object-contain pixelated p-1.5" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
+                            </div>
+                            {pts > 0 && (
+                              <div className="absolute top-1 left-1 w-5 h-5 rounded-md bg-red-600 text-white text-[11px] font-black flex items-center justify-center shadow-md z-10 pointer-events-none italic">
+                                {pts}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sub Skill Trees Display */}
+          {build.subSkillPoints && Object.keys(build.subSkillPoints).some(id => Object.keys((build.subSkillPoints as any)[id] || {}).length > 0) && (
+            <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm space-y-6">
+              <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm border-b border-brand-orange/10 pb-2 flex items-center gap-2">
+                <Circle className="w-2 h-2 fill-current" />
+                Sub Skill Trees
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                {Object.entries(build.subSkillPoints).map(([skillId, points]) => {
+                  if (!points || typeof points !== 'object') return null;
+                  const ptsMap = points as Record<number, number>;
+                  const total = Object.values(ptsMap).reduce((a, b) => a + Number(b || 0), 0);
+                  if (total === 0) return null;
+
+                  // Find skill details from classSkillsData
+                  let skillDetails: { name: string; icon: string } | null = null;
+                  if (classSkillsData) {
+                    [classSkillsData.tree1, classSkillsData.tree2].forEach(tree => {
+                      if (Array.isArray(tree)) {
+                        const s = tree.find(sk => sk && sk.id === skillId);
+                        if (s) skillDetails = { name: s.name || 'Unknown Skill', icon: s.icon || '' };
+                      }
+                    });
+                  }
+
+                  return (
+                    <div key={skillId} className="space-y-4 w-full">
+                      <div className="flex items-center gap-3 bg-brand-bg/50 p-3 rounded-xl border border-brand-dark/5">
+                        <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1 shadow-sm">
+                          <img src={skillDetails?.icon} alt="" className="w-full h-full object-contain pixelated" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Sub Tree for</div>
+                          <div className="text-sm font-bold text-brand-darker uppercase">{skillDetails?.name || 'Unknown Skill'}</div>
+                        </div>
+                      </div>
+                      <SubSkillTreePreview skillIcon={skillDetails?.icon || ''} points={ptsMap} />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
