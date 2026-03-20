@@ -208,6 +208,25 @@ function AttributePentagramIcon({ color }: { color: string }) {
   );
 }
 
+const renderFormattedContent = (text: string) => {
+  if (!text) return null;
+  const parts = text.split(/(★|✓|✗|ℹ️|❤️|⚡|💀|🛡️|🔥)/g);
+  return parts.map((part, i) => {
+    switch (part) {
+      case '★': return <span key={i} className="text-amber-500 font-bold drop-shadow-sm">★</span>;
+      case '✓': return <span key={i} className="text-green-600 font-bold drop-shadow-sm">✓</span>;
+      case '✗': return <span key={i} className="text-red-600 font-bold drop-shadow-sm">✗</span>;
+      case 'ℹ️': return <span key={i} className="text-blue-500 font-bold">ℹ️</span>;
+      case '❤️': return <span key={i} className="text-red-500 font-bold">❤️</span>;
+      case '⚡': return <span key={i} className="text-yellow-400 font-bold">⚡</span>;
+      case '💀': return <span key={i} className="text-gray-600 font-bold">💀</span>;
+      case '🛡️': return <span key={i} className="text-blue-600 font-bold">🛡️</span>;
+      case '🔥': return <span key={i} className="text-orange-600 font-bold">🔥</span>;
+      default: return part;
+    }
+  });
+};
+
 export function ForumPage() {
   const { user, profile } = useAuth();
   const { classKey: pathClassKey } = useParams<{ classKey?: string }>();
@@ -1695,11 +1714,11 @@ export function ForumPage() {
                     <div className="space-y-2">
                       {nbExcerpt && (
                         <div className="text-[11px] text-brand-darker/60 italic border-l-2 border-brand-orange/20 pl-3">
-                          {nbExcerpt}
+                          {renderFormattedContent(nbExcerpt)}
                         </div>
                       )}
                       <div className="text-[11px] text-brand-darker/80 whitespace-pre-wrap line-clamp-[10]">
-                        {nbContent || 'Your build details will appear here...'}
+                        {nbContent ? renderFormattedContent(nbContent) : 'Your build details will appear here...'}
                       </div>
                     </div>
 

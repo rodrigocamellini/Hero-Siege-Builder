@@ -3,7 +3,27 @@ import { getApps, initializeApp } from 'firebase/app';
 import { firestore } from '../../firebase';
 import { doc, getDoc, setDoc, serverTimestamp, getFirestore } from 'firebase/firestore';
 import { classKeys, classNames, type ClassKey } from '../../data/tierlist';
-import { Save, RefreshCw, CheckCircle2, Circle, Plus, Download } from 'lucide-react';
+import { Save, RefreshCw, CheckCircle2, Circle, Plus, Download, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const legacyFirebaseConfig = {
   apiKey: 'AIzaSyDCgl4dbGTJUH-0bsGsisO9KbWYoIN3KU4',
@@ -471,12 +491,80 @@ const LEGACY_BUILDER_DB: Record<string, any> = {
   }
 };
 
+function SkillCard({ skill, isDragging, isOverlay }: { skill: SkillSlot; isDragging?: boolean; isOverlay?: boolean }) {
+  return (
+    <div
+      className={`relative aspect-square rounded-xl border-2 flex items-center justify-center bg-white transition-all group ${
+        isOverlay 
+          ? 'border-brand-orange shadow-2xl scale-110 z-[100] cursor-grabbing' 
+          : isDragging 
+            ? 'border-brand-orange/10 opacity-20 cursor-grabbing' 
+            : 'border-brand-orange/20 shadow-sm hover:border-brand-orange/50 cursor-grab active:cursor-grabbing'
+      }`}
+    >
+      <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <GripVertical className="w-3 h-3 text-brand-dark/20" />
+      </div>
+      {skill.icon ? (
+        <img src={skill.icon} className="w-10 h-10 object-contain pixelated pointer-events-none" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
+      ) : (
+        <span className="text-[9px] font-bold text-brand-dark/20 uppercase pointer-events-none">Empty</span>
+      )}
+      {skill.name && (
+        <div className="absolute -bottom-1 -right-1 pointer-events-none">
+          {skill.hasSubTree ? (
+            <div className="bg-brand-orange text-white rounded-full p-0.5 shadow-sm" title="Possui Árvore Extra">
+              <Plus className="w-3 h-3" />
+            </div>
+          ) : (
+            <Circle className="w-4 h-4 text-brand-dark/20 fill-white" />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SortableSkill({ skill }: { skill: SkillSlot }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: skill.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <SkillCard skill={skill} isDragging={isDragging} />
+    </div>
+  );
+}
+
 export function AdminHeroSkillsPanel() {
   const [selectedClass, setSelectedClass] = useState<ClassKey>('viking');
   const [data, setData] = useState<ClassSkills | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     let alive = true;
@@ -531,6 +619,66 @@ export function AdminHeroSkillsPanel() {
     void load();
     return () => { alive = false; };
   }, [selectedClass]);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id || !data) return;
+
+    // Find source
+    let sourceKey: 'tree1' | 'tree2' | null = null;
+    let oldIndex = data.tree1.findIndex((s) => s.id === active.id);
+    if (oldIndex !== -1) {
+      sourceKey = 'tree1';
+    } else {
+      oldIndex = data.tree2.findIndex((s) => s.id === active.id);
+      if (oldIndex !== -1) sourceKey = 'tree2';
+    }
+
+    // Find target
+    let targetKey: 'tree1' | 'tree2' | null = null;
+    let newIndex = data.tree1.findIndex((s) => s.id === over.id);
+    if (newIndex !== -1) {
+      targetKey = 'tree1';
+    } else {
+      newIndex = data.tree2.findIndex((s) => s.id === over.id);
+      if (newIndex !== -1) targetKey = 'tree2';
+    }
+
+    if (!sourceKey || !targetKey || oldIndex === -1 || newIndex === -1) return;
+
+    if (sourceKey === targetKey) {
+      // Single tree swap: swap items at oldIndex and newIndex
+      const nextTree = [...data[sourceKey]];
+      const activeItem = { ...nextTree[oldIndex], position: newIndex };
+      const overItem = { ...nextTree[newIndex], position: oldIndex };
+      
+      nextTree[oldIndex] = overItem;
+      nextTree[newIndex] = activeItem;
+      
+      setData({ ...data, [sourceKey]: nextTree });
+    } else {
+      // Cross-tree swap: maintain 15 slots in each
+      const activeItem = { ...data[sourceKey][oldIndex], position: newIndex };
+      const overItem = { ...data[targetKey][newIndex], position: oldIndex };
+
+      const nextSource = [...data[sourceKey]];
+      nextSource[oldIndex] = overItem;
+
+      const nextTarget = [...data[targetKey]];
+      nextTarget[newIndex] = activeItem;
+
+      setData({
+        ...data,
+        [sourceKey]: nextSource,
+        [targetKey]: nextTarget
+      });
+    }
+  };
 
   const updateSkill = (treeKey: 'tree1' | 'tree2', index: number, field: keyof SkillSlot, value: any) => {
     if (!data) return;
@@ -799,40 +947,35 @@ export function AdminHeroSkillsPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {(['tree1', 'tree2'] as const).map((treeKey) => (
-          <div key={treeKey} className="space-y-4">
-            <div className="bg-white border border-brand-dark/10 rounded-3xl p-6">
-              <input
-                value={data?.[treeKey === 'tree1' ? 't1' : 't2'] || ''}
-                onChange={(e) => setData(d => d ? { ...d, [treeKey === 'tree1' ? 't1' : 't2']: e.target.value } : null)}
-                placeholder="Título da Árvore"
-                className="w-full bg-transparent border-none text-xl font-black uppercase italic tracking-tighter text-brand-darker focus:ring-0 p-0 mb-6 placeholder:opacity-20"
-              />
-              
-              <div className="grid grid-cols-3 gap-3">
-                {(data?.[treeKey] || []).map((skill) => (
-                  <div key={skill.id} className="relative aspect-square rounded-xl border-2 flex items-center justify-center bg-white border-brand-orange/20 shadow-sm transition-all hover:border-brand-orange/50">
-                    {skill.icon ? (
-                      <img src={skill.icon} className="w-10 h-10 object-contain pixelated" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
-                    ) : (
-                      <span className="text-[9px] font-bold text-brand-dark/20 uppercase">Empty</span>
-                    )}
-                    {skill.name && (
-                      <div className="absolute -bottom-1 -right-1">
-                        {skill.hasSubTree ? (
-                          <div className="bg-brand-orange text-white rounded-full p-0.5 shadow-sm" title="Possui Árvore Extra">
-                            <Plus className="w-3 h-3" />
-                          </div>
-                        ) : (
-                          <Circle className="w-4 h-4 text-brand-dark/20 fill-white" />
-                        )}
-                      </div>
-                    )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {(['tree1', 'tree2'] as const).map((treeKey) => (
+            <div key={treeKey} className="space-y-4">
+              <div className="bg-white border border-brand-dark/10 rounded-3xl p-6">
+                <input
+                  value={data?.[treeKey === 'tree1' ? 't1' : 't2'] || ''}
+                  onChange={(e) => setData(d => d ? { ...d, [treeKey === 'tree1' ? 't1' : 't2']: e.target.value } : null)}
+                  placeholder="Título da Árvore"
+                  className="w-full bg-transparent border-none text-xl font-black uppercase italic tracking-tighter text-brand-darker focus:ring-0 p-0 mb-6 placeholder:opacity-20"
+                />
+                
+                <SortableContext
+                  id={treeKey}
+                  items={(data?.[treeKey] || []).map(s => s.id)}
+                  strategy={rectSortingStrategy}
+                >
+                  <div className="grid grid-cols-3 gap-3">
+                    {(data?.[treeKey] || []).map((skill) => (
+                      <SortableSkill key={skill.id} skill={skill} />
+                    ))}
                   </div>
-                ))}
+                </SortableContext>
               </div>
-            </div>
 
             <div className="bg-white border border-brand-dark/10 rounded-3xl overflow-hidden">
               <div className="p-4 border-b border-brand-dark/10 bg-brand-bg/50">
@@ -890,10 +1033,20 @@ export function AdminHeroSkillsPanel() {
                   </div>
                 ))}
               </div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+
+        <DragOverlay adjustScale={true}>
+          {activeId ? (
+            <SkillCard 
+              skill={[...(data?.tree1 || []), ...(data?.tree2 || [])].find(s => s.id === activeId)!} 
+              isOverlay 
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }
