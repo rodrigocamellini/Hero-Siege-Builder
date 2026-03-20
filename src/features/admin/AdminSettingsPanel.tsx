@@ -31,6 +31,12 @@ export function AdminSettingsPanel() {
   const [blogDeleteRoles, setBlogDeleteRoles] = useState<Role[]>(['DEVELOPER']);
   const [blogDeleteSaving, setBlogDeleteSaving] = useState(false);
   const [blogDeleteSavedOk, setBlogDeleteSavedOk] = useState(false);
+  const [forumRoles, setForumRoles] = useState<Role[]>(['DEVELOPER']);
+  const [forumSaving, setForumSaving] = useState(false);
+  const [forumSavedOk, setForumSavedOk] = useState(false);
+  const [forumDeleteRoles, setForumDeleteRoles] = useState<Role[]>(['DEVELOPER']);
+  const [forumDeleteSaving, setForumDeleteSaving] = useState(false);
+  const [forumDeleteSavedOk, setForumDeleteSavedOk] = useState(false);
 
   const [mediaSettings, setMediaSettings] = useState({
     site: { title: 'Site', image: 'logopas.webp', link: '' },
@@ -63,6 +69,21 @@ export function AdminSettingsPanel() {
           r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
         );
         setBlogDeleteRoles(deleteNormalized.length ? deleteNormalized : ['DEVELOPER']);
+
+        const forumSnap = await getDoc(doc(firestore, 'appSettings', 'forum'));
+        const rawForum = forumSnap.exists() ? (forumSnap.data() as any)?.allowedRoles : null;
+        const rolesForum = Array.isArray(rawForum) ? (rawForum.filter((r) => typeof r === 'string') as Role[]) : [];
+        const normalizedForum = Array.from(new Set(['DEVELOPER', ...rolesForum])).filter((r): r is Role =>
+          r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+        );
+        setForumRoles(normalizedForum.length ? normalizedForum : ['DEVELOPER']);
+
+        const rawForumDelete = forumSnap.exists() ? (forumSnap.data() as any)?.deleteAllowedRoles : null;
+        const rolesForumDelete = Array.isArray(rawForumDelete) ? (rawForumDelete.filter((r) => typeof r === 'string') as Role[]) : [];
+        const normalizedForumDelete = Array.from(new Set(['DEVELOPER', ...rolesForumDelete])).filter((r): r is Role =>
+          r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+        );
+        setForumDeleteRoles(normalizedForumDelete.length ? normalizedForumDelete : ['DEVELOPER']);
 
         const mediaSnap = await getDoc(doc(firestore, 'appSettings', 'media'));
         if (mediaSnap.exists()) {
@@ -123,6 +144,42 @@ export function AdminSettingsPanel() {
       setError(firestoreErrorMessage(err));
     } finally {
       setBlogDeleteSaving(false);
+    }
+  }
+
+  async function saveForumRoles() {
+    setError(null);
+    setForumSavedOk(false);
+    setForumSaving(true);
+    try {
+      const normalized = Array.from(new Set(['DEVELOPER', ...forumRoles])).filter((r): r is Role =>
+        r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+      );
+      await setDoc(doc(firestore, 'appSettings', 'forum'), { allowedRoles: normalized, updatedAt: serverTimestamp() }, { merge: true });
+      setForumRoles(normalized.length ? normalized : ['DEVELOPER']);
+      setForumSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setForumSaving(false);
+    }
+  }
+
+  async function saveForumDeleteRoles() {
+    setError(null);
+    setForumDeleteSavedOk(false);
+    setForumDeleteSaving(true);
+    try {
+      const normalized = Array.from(new Set(['DEVELOPER', ...forumDeleteRoles])).filter((r): r is Role =>
+        r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+      );
+      await setDoc(doc(firestore, 'appSettings', 'forum'), { deleteAllowedRoles: normalized, updatedAt: serverTimestamp() }, { merge: true });
+      setForumDeleteRoles(normalized.length ? normalized : ['DEVELOPER']);
+      setForumDeleteSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setForumDeleteSaving(false);
     }
   }
 
@@ -317,9 +374,9 @@ export function AdminSettingsPanel() {
         <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Forum</div>
-              <div className="text-sm font-bold text-brand-darker">Quem pode deletar posts e comentários</div>
-              <div className="text-xs text-brand-darker/60">Exibe lixeira no post e libera exclusão no painel.</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Blog Delete</div>
+              <div className="text-sm font-bold text-brand-darker">Quem pode deletar posts e comentários do blog</div>
+              <div className="text-xs text-brand-darker/60">Controla quem pode excluir conteúdo no blog.</div>
             </div>
             <button
               type="button"
@@ -358,7 +415,105 @@ export function AdminSettingsPanel() {
             ))}
           </div>
 
-          {blogDeleteSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões de exclusão atualizadas.</div> : null}
+          {blogDeleteSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões de exclusão do blog atualizadas.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Build Forum Create</div>
+              <div className="text-sm font-bold text-brand-darker">Quem pode enviar novas builds</div>
+              <div className="text-xs text-brand-darker/60">Controla a visibilidade do botão "Submit Build".</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveForumRoles()}
+              disabled={loading || forumSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {forumSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(['DEVELOPER', 'MODERATOR', 'CONTRIBUTOR', 'PARTNER', 'USER'] as Role[]).map((r) => (
+              <label
+                key={r}
+                className="flex items-center gap-2 bg-white border border-brand-dark/10 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-widest text-brand-darker/70 select-none"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-orange"
+                  checked={forumRoles.includes(r)}
+                  disabled={loading || forumSaving || r === 'DEVELOPER'}
+                  onChange={(e) => {
+                    setForumSavedOk(false);
+                    setForumRoles((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(r);
+                      else next.delete(r);
+                      next.add('DEVELOPER');
+                      return Array.from(next);
+                    });
+                  }}
+                />
+                {r}
+              </label>
+            ))}
+          </div>
+
+          {forumSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões de envio do fórum atualizadas.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Build Forum Delete</div>
+              <div className="text-sm font-bold text-brand-darker">Quem pode deletar builds e comentários</div>
+              <div className="text-xs text-brand-darker/60">Controla quem pode excluir conteúdo no fórum.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveForumDeleteRoles()}
+              disabled={loading || forumDeleteSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {forumDeleteSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(['DEVELOPER', 'MODERATOR', 'CONTRIBUTOR', 'PARTNER', 'USER'] as Role[]).map((r) => (
+              <label
+                key={r}
+                className="flex items-center gap-2 bg-white border border-brand-dark/10 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-widest text-brand-darker/70 select-none"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-brand-orange"
+                  checked={forumDeleteRoles.includes(r)}
+                  disabled={loading || forumDeleteSaving || r === 'DEVELOPER'}
+                  onChange={(e) => {
+                    setForumDeleteSavedOk(false);
+                    setForumDeleteRoles((prev) => {
+                      const next = new Set(prev);
+                      if (e.target.checked) next.add(r);
+                      else next.delete(r);
+                      next.add('DEVELOPER');
+                      return Array.from(next);
+                    });
+                  }}
+                />
+                {r}
+              </label>
+            ))}
+          </div>
+
+          {forumDeleteSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões de exclusão do fórum atualizadas.</div> : null}
         </div>
       </div>
 

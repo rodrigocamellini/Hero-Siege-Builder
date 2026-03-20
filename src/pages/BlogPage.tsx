@@ -79,9 +79,10 @@ export function BlogPage() {
   }, []);
 
   const canWrite = useMemo(() => {
-    const role = (profile?.role ?? 'USER') as Role;
+    if (!profile) return false;
+    const role = profile.role as Role;
     return allowedRoles.includes(role);
-  }, [allowedRoles, profile?.role]);
+  }, [allowedRoles, profile]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

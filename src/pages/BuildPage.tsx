@@ -1,12 +1,14 @@
 'use client';
 
 import { getApps, initializeApp } from 'firebase/app';
-import { collection, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, query, where, limit, type Timestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, query, where, limit, deleteDoc, writeBatch, type Timestamp } from 'firebase/firestore';
 import { type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { Star, Pencil, Calendar, Plus, Circle, ArrowLeft } from 'lucide-react';
+import { Star, Pencil, Calendar, Plus, Circle, ArrowLeft, Trash2 } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
+import { Modal } from '../components/Modal';
+import { SubSkillTree } from '../components/SubSkillTree';
 import { classNames, type ClassKey } from '../data/tierlist';
 import { firestore } from '../firebase';
 import { useAuth } from '../features/auth/AuthProvider';
@@ -78,6 +80,7 @@ type BuildDoc = {
   mercenaryType: 'knight' | 'archer' | 'magister' | null;
   mercenaryGear: MercenaryGear | null;
   skillPoints: Record<string, number> | null;
+  subSkillPoints?: Record<string, Record<number, number>> | null;
   items: string[] | null;
   flasks: Array<string | null> | null;
   itemsSlots: Record<string, string> | null;
@@ -255,15 +258,42 @@ const renderFormattedContent = (text: any) => {
 
 export function BuildPage() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
   const isAdmin = !!adminEmail && !!user?.email && user.email.trim().toLowerCase() === adminEmail;
   const navigate = useNavigate();
   const tSidebar = translations.en;
 
+  const [deleteAllowedRoles, setDeleteAllowedRoles] = useState<Role[]>(['DEVELOPER']);
+  const [deletePostOpen, setDeletePostOpen] = useState(false);
+  const [deletingPost, setDeletingPost] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [build, setBuild] = useState<(BuildDoc & { id: string }) | null>(null);
+  const [subTreeSkill, setSubTreeSkill] = useState<{ id: string; name: string; icon: string } | null>(null);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'appSettings', 'forum'));
+        const raw = snap.exists() ? (snap.data() as any)?.deleteAllowedRoles : null;
+        const roles = Array.isArray(raw) ? (raw.filter((r) => typeof r === 'string') as Role[]) : [];
+        const normalized = Array.from(new Set(['DEVELOPER', ...roles])).filter((r): r is Role =>
+          r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+        );
+        setDeleteAllowedRoles(normalized.length ? normalized : ['DEVELOPER']);
+      } catch {
+        setDeleteAllowedRoles(['DEVELOPER']);
+      }
+    };
+    void loadSettings();
+  }, []);
+
+  const canDeleteBuild = useMemo(() => {
+    if (!user || !profile) return false;
+    const role = (profile.role ?? 'USER') as Role;
+    return deleteAllowedRoles.includes(role);
+  }, [deleteAllowedRoles, profile, user]);
 
   const [myRating, setMyRating] = useState<number | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
@@ -673,6 +703,28 @@ export function BuildPage() {
     }
   };
 
+  const deleteBuild = async () => {
+    if (!build?.id) return;
+    setDeletingPost(true);
+    try {
+      // 1. Delete ratings subcollection
+      const ratingsSnap = await getDocs(collection(firestore, 'builds', build.id, 'ratings'));
+      const batch = writeBatch(firestore);
+      ratingsSnap.docs.forEach((d) => batch.delete(d.ref));
+      
+      // 2. Delete build doc
+      batch.delete(doc(firestore, 'builds', build.id));
+      
+      await batch.commit();
+      navigate('/forum');
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete build.');
+    } finally {
+      setDeletingPost(false);
+      setDeletePostOpen(false);
+    }
+  };
+
   const renderContent = () => {
     if (loading) return <div className="p-12 text-center text-brand-darker/40 font-bold uppercase tracking-widest text-xs">Loading build...</div>;
     if (error || !build) return <div className="p-12 text-center text-red-500 font-bold uppercase tracking-widest text-sm">{error || 'Build not found'}</div>;
@@ -923,14 +975,22 @@ export function BuildPage() {
                             <div className={`w-full h-full rounded-2xl border-2 flex items-center justify-center transition-all ${pts > 0 ? 'bg-white border-brand-orange shadow-md' : 'bg-brand-bg border-brand-dark/5 opacity-20 grayscale'}`}>
                               <img src={s.icon} alt={s.name} className="w-full h-full object-contain pixelated p-1.5" onError={e => e.currentTarget.src = '/images/herosiege.png'} />
                             </div>
-                            {pts > 0 && (
-                              <div className="absolute -top-3 -right-3 min-w-[32px] h-8 rounded-full bg-brand-orange text-white text-[20px] font-black flex items-center justify-center shadow-2xl border-2 border-white z-10 pointer-events-none italic">
-                                {pts}
-                              </div>
-                            )}
                             {s.hasSubTree && (
-                              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-1 border border-brand-dark/10 shadow-md">
-                                <Plus className="w-3 h-3 text-brand-orange" />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSubTreeSkill({ id: s.id, name: s.name, icon: s.icon });
+                                }}
+                                className="absolute top-1 right-1 w-5 h-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md flex items-center justify-center shadow-md transition-colors z-20"
+                                title="View Sub Skill Tree"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            )}
+                            {pts > 0 && (
+                              <div className="absolute top-1 left-1 w-5 h-5 rounded-md bg-red-600 text-white text-[11px] font-black flex items-center justify-center shadow-md z-10 pointer-events-none italic">
+                                {pts}
                               </div>
                             )}
                           </div>
@@ -941,6 +1001,16 @@ export function BuildPage() {
                 ))}
               </div>
             </div>
+          )}
+
+          {subTreeSkill && (
+            <SubSkillTree
+              skillName={subTreeSkill.name}
+              skillIcon={subTreeSkill.icon}
+              points={(build.subSkillPoints as any)?.[subTreeSkill.id] || {}}
+              onClose={() => setSubTreeSkill(null)}
+              readOnly
+            />
           )}
 
           {build.mercenaryType && (
@@ -1111,6 +1181,15 @@ export function BuildPage() {
                       <Pencil className="w-4 h-4" />
                     </Link>
                   )}
+                  {canDeleteBuild && (
+                    <button
+                      type="button"
+                      onClick={() => setDeletePostOpen(true)}
+                      className="bg-red-600 text-white p-2 rounded-xl hover:bg-red-700 transition-colors shadow-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1121,6 +1200,37 @@ export function BuildPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={deletePostOpen}
+        title="Delete Build"
+        onClose={() => {
+          if (deletingPost) return;
+          setDeletePostOpen(false);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/80">Are you sure you want to delete this build? This action cannot be undone.</div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setDeletePostOpen(false)}
+              disabled={deletingPost}
+              className="inline-flex items-center justify-center bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void deleteBuild()}
+              disabled={deletingPost}
+              className="inline-flex items-center justify-center bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-60"
+            >
+              {deletingPost ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </StandardPage>
   );
 }

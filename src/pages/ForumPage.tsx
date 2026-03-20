@@ -47,6 +47,7 @@ import {
 import { Modal } from '../components/Modal';
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
+import { SubSkillTree } from '../components/SubSkillTree';
 import { classKeys, classNames, type ClassKey } from '../data/tierlist';
 import { firestore } from '../firebase';
 import { useAuth } from '../features/auth/AuthProvider';
@@ -55,6 +56,8 @@ import relicMap from '../../hero-siege-brasil/src/relicsMap.json';
 import { CHARM_DB } from '../data/charmDb';
 import { EXTRA_SHIELDS } from '../data/extraShields';
 import { slugify } from '../utils/slugify';
+
+type Role = 'USER' | 'CONTRIBUTOR' | 'MODERATOR' | 'PARTNER' | 'DEVELOPER';
 
 type BuildStatus = 'PENDING' | 'PUBLISHED' | 'REJECTED' | 'DRAFT';
 type BuildTier = 'starterGame' | 'midGame' | 'endGame';
@@ -83,6 +86,8 @@ interface BuildRow {
   featured: boolean;
   ratingAvg: number;
   ratingCount: number;
+  skillPoints?: Record<string, number>;
+  subSkillPoints?: Record<string, Record<number, number>>;
   incarnationTreeLink?: string;
   etherTreeLink?: string;
   publishedAt: Timestamp | null;
@@ -263,6 +268,7 @@ export function ForumPage() {
   const [submitOk, setSubmitOk] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [allowedRoles, setAllowedRoles] = useState<Role[]>(['DEVELOPER']);
 
   // Build fields
   const [nbTitle, setNbTitle] = useState('');
@@ -332,6 +338,8 @@ export function ForumPage() {
 
   // Skill Trees state
   const [nbSkillPoints, setNbSkillPoints] = useState<Record<string, number>>({});
+  const [nbSubSkillPoints, setNbSubSkillPoints] = useState<Record<string, Record<number, number>>>({});
+  const [subTreeSkill, setSubTreeSkill] = useState<{ id: string; name: string; icon: string } | null>(null);
   const [nbIncarnationTree, setNbIncarnationTree] = useState('');
   const [nbEtherTree, setNbEtherTree] = useState('');
   const [classSkillsData, setClassSkillsData] = useState<{
@@ -403,6 +411,21 @@ export function ForumPage() {
 
   // Load builds when class or tab changes
   useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settingsSnap = await getDoc(doc(firestore, 'appSettings', 'forum'));
+        const raw = settingsSnap.exists() ? (settingsSnap.data() as any)?.allowedRoles : null;
+        const roles = Array.isArray(raw) ? (raw.filter((r) => typeof r === 'string') as Role[]) : [];
+        const normalized = Array.from(new Set(['DEVELOPER', ...roles])).filter((r): r is Role =>
+          r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
+        );
+        setAllowedRoles(normalized.length ? normalized : ['DEVELOPER']);
+      } catch {
+        setAllowedRoles(['DEVELOPER']);
+      }
+    };
+    void loadSettings();
+
     const loadBuilds = async () => {
       setLoading(true);
       setError(null);
@@ -645,6 +668,7 @@ export function ForumPage() {
       setNbRelics(Array.isArray(data.relics) ? data.relics : [null, null, null, null, null]);
       setNbCharms(Array.isArray(data.charms) ? data.charms : []);
       setNbSkillPoints(data.skillPoints || {});
+      setNbSubSkillPoints(data.subSkillPoints || {});
       setNbIncarnationTree(data.incarnationTreeLink || '');
       setNbEtherTree(data.etherTreeLink || '');
       setNbMercenaryType(data.mercenaryType || '');
@@ -718,6 +742,7 @@ export function ForumPage() {
         relics: nbRelics.map((r) => (r ? String(r).trim() : null)),
         charms: nbCharms.map((c) => String(c).trim()).filter(Boolean),
         skillPoints: nbSkillPoints,
+        subSkillPoints: nbSubSkillPoints,
         incarnationTreeLink: nbIncarnationTree.trim(),
         etherTreeLink: nbEtherTree.trim(),
         mercenaryType: nbMercenaryType || null,
@@ -1071,6 +1096,12 @@ export function ForumPage() {
     });
   };
 
+  const canSubmit = useMemo(() => {
+    if (!profile) return false;
+    const role = profile.role as Role;
+    return allowedRoles.includes(role);
+  }, [allowedRoles, profile]);
+
   const buildsEmptyText = loading
     ? 'Loading builds...'
     : error
@@ -1096,11 +1127,11 @@ export function ForumPage() {
                 >
                   Sign in to post
                 </Link>
-              ) : (
+              ) : canSubmit ? (
                 <button type="button" onClick={openNewBuild} className="orange-button text-xs px-4 h-10 flex items-center gap-2">
                   <Plus className="w-4 h-4" /> Submit Build
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -1572,14 +1603,22 @@ export function ForumPage() {
                                     </div>
                                   )}
                                 </button>
-                                {points > 0 && (
-                                  <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-brand-orange text-white text-[9px] font-black flex items-center justify-center shadow-sm border border-white">
-                                    {points}
-                                  </div>
-                                )}
                                 {skill.hasSubTree && (
-                                  <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 border border-brand-dark/10 shadow-sm">
-                                    <Plus className="w-2 h-2 text-brand-orange" />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSubTreeSkill({ id: skill.id, name: skill.name, icon: skill.icon });
+                                    }}
+                                    className="absolute top-1 right-1 w-4 h-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md flex items-center justify-center shadow-sm transition-colors z-10"
+                                    title="Open Sub Skill Tree"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                )}
+                                {points > 0 && (
+                                  <div className="absolute top-1 left-1 w-4 h-4 rounded-md bg-red-600 text-white text-[9px] font-black flex items-center justify-center shadow-sm">
+                                    {points}
                                   </div>
                                 )}
                               </div>
@@ -1596,6 +1635,16 @@ export function ForumPage() {
                 )}
               </section>
             </div>
+
+            {subTreeSkill && (
+              <SubSkillTree
+                skillName={subTreeSkill.name}
+                skillIcon={subTreeSkill.icon}
+                points={nbSubSkillPoints[subTreeSkill.id] || {}}
+                onChange={(points) => setNbSubSkillPoints(prev => ({ ...prev, [subTreeSkill.id]: points }))}
+                onClose={() => setSubTreeSkill(null)}
+              />
+            )}
 
             <div className="space-y-5">
               <div className="sticky top-0 space-y-5">
