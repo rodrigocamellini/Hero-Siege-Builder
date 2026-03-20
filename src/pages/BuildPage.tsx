@@ -1,10 +1,10 @@
 'use client';
 
 import { getApps, initializeApp } from 'firebase/app';
-import { collection, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, type Timestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, getFirestore, runTransaction, serverTimestamp, query, where, limit, type Timestamp } from 'firebase/firestore';
 import { type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { Star, Pencil, Calendar, Plus, Circle } from 'lucide-react';
+import { Star, Pencil, Calendar, Plus, Circle, ArrowLeft } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { StandardPage } from '../components/StandardPage';
 import { classNames, type ClassKey } from '../data/tierlist';
@@ -67,6 +67,7 @@ type MercenaryGear = {
 
 type BuildDoc = {
   title: string;
+  slug: string | null;
   excerpt: string | null;
   content: string | null;
   classKey: ClassKey;
@@ -89,6 +90,8 @@ type BuildDoc = {
   ratingAvg: number;
   ratingCount: number;
   ratingSum: number;
+  incarnationTreeLink?: string;
+  etherTreeLink?: string;
   publishedAt: Timestamp | null;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
@@ -268,6 +271,7 @@ export function BuildPage() {
 
   const [itemCategories, setItemCategories] = useState<ItemCategoryRow[]>([]);
   const [itemsLoaded, setItemsLoaded] = useState(false);
+  const [cacheVersion, setCacheVersion] = useState(0);
   const [classSkillsData, setClassSkillsData] = useState<{
     t1: string;
     t2: string;
@@ -297,19 +301,34 @@ export function BuildPage() {
   const getItemCategoriesForSlot = (slot: string) => {
     const s = String(slot || '').trim().toLowerCase();
     if (!s || itemCategories.length === 0) return [] as ItemCategoryRow[];
-    const candidates = itemCategoryCandidates[s as keyof typeof itemCategoryCandidates] || [s];
-    
+    const normalized = itemCategories.map((c) => ({
+      raw: c,
+      id: String(c.id || '').trim().toLowerCase(),
+      title: String(c.title || '').trim().toLowerCase(),
+      group: String(c.group || '').trim().toLowerCase(),
+    }));
     if (s === 'weapon') {
       const weaponHints = ['weapon', 'throwing', 'sword', 'axe', 'mace', 'dagger', 'staff', 'wand', 'bow', 'crossbow', 'spear', 'scythe', 'gun', 'pistol', 'rifle', 'shotgun', 'cannon', 'katana', 'claw', 'hammer'];
-      return itemCategories.filter((c) => {
-        const id = String(c.id || '').toLowerCase();
-        const title = String(c.title || '').toLowerCase();
-        const group = String(c.group || '').toLowerCase();
-        const hay = `${id} ${title} ${group}`.trim();
-        return group === 'weapons' || weaponHints.some((h) => hay.includes(h)) || candidates.some((cand) => hay.includes(cand));
-      });
+      const weaponish = normalized
+        .filter((c) => {
+          if (c.group === 'weapons') return true;
+          const hay = `${c.id} ${c.title}`.trim();
+          return weaponHints.some((h) => hay.includes(h));
+        })
+        .map((c) => c.raw);
+      if (weaponish.length) return weaponish;
     }
-
+    if (s === 'shield') {
+      const shieldish = normalized.filter((c) => c.title.includes('shield') || c.id.includes('shield')).map((c) => c.raw);
+      if (shieldish.length) return shieldish;
+    }
+    if (s === 'flask') {
+      const flaskish = normalized
+        .filter((c) => c.group === 'flasks' || c.title.includes('flask') || c.title.includes('potion') || c.id.includes('flask') || c.id.includes('potion'))
+        .map((c) => c.raw);
+      if (flaskish.length) return flaskish;
+    }
+    const candidates = itemCategoryCandidates[s as keyof typeof itemCategoryCandidates] || [s];
     return itemCategories.filter((c) => {
       const id = String(c.id || '').toLowerCase();
       const title = String(c.title || '').toLowerCase();
@@ -351,6 +370,8 @@ export function BuildPage() {
       if (extra?.image) return extra.image;
     }
 
+    if (itemCategories.length === 0) return null;
+
     const cats = getItemCategoriesForSlot(slot);
     for (const cat of cats) {
       const cache = itemCacheRef.current[String(cat.id || '').trim().toLowerCase()];
@@ -360,7 +381,12 @@ export function BuildPage() {
         if (img) return img;
       }
     }
-    return ITEM_FALLBACK_ICON;
+    
+    // If we've finished loading all items and still haven't found it, return fallback
+    if (itemsLoaded) return ITEM_FALLBACK_ICON;
+    
+    // Otherwise return null to indicate we're still looking
+    return null;
   };
 
   const onItemImageError = (e: SyntheticEvent<HTMLImageElement>) => {
@@ -375,7 +401,7 @@ export function BuildPage() {
     let alive = true;
     const loadCats = async () => {
       try {
-        const snap = await getDocs(collection(firestore, 'item_categories'));
+        const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories'));
         const next: ItemCategoryRow[] = [];
         for (const d of snap.docs) {
           const data = d.data() as any;
@@ -426,52 +452,83 @@ export function BuildPage() {
   }, [build?.classKey]);
 
   useEffect(() => {
-    if (!build) return;
+    if (!build || itemCategories.length === 0) return;
     
-    // If we have categories, prefetch. If not, we still need to set itemsLoaded to true
-    // eventually so the page can render with fallback icons if needed.
     let alive = true;
     
     const run = async () => {
-      if (itemCategories.length > 0) {
-        const slotsToPrefetch = ['weapon', 'shield', 'helmet', 'body', 'chest', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'flask'] as const;
-        const loadCategoryItems = async (slot: (typeof slotsToPrefetch)[number]) => {
-          const cats = getItemCategoriesForSlot(slot);
-          if (!cats.length) return;
-          for (const cat of cats) {
-            const baseId = String(cat.id || '').trim();
-            if (!baseId) continue;
-            const cacheKey = baseId.toLowerCase();
-            if (itemCacheRef.current[cacheKey]?.items?.length) continue;
-            try {
-              const snap = await getDocs(collection(firestore, 'item_categories', baseId, 'items'));
-              const items: ItemRow[] = [];
-              for (const s of snap.docs) {
-                const data = s.data() as any;
-                items.push({
-                  id: s.id,
-                  name: safeString(data?.name) || undefined,
-                  rarity: safeString(data?.rarity) || undefined,
-                  image: safeString(data?.image) || undefined,
-                  img: safeString(data?.img) || undefined,
-                });
-              }
-              const byName = new Map<string, ItemRow>();
-              for (const it of items) {
-                const n = String(it.name || '').trim().toLowerCase();
-                if (n && !byName.has(n)) byName.set(n, it);
-              }
-              itemCacheRef.current[cacheKey] = { items, byName };
-            } catch (err) {
-              console.error(`Error loading items for category ${baseId}:`, err);
-            }
-          }
-        };
-
-        const promises = slotsToPrefetch.map(slot => loadCategoryItems(slot));
-        await Promise.all(promises);
+      // 1. Identify all needed slots based on items present in the build
+      const neededSlots = new Set<string>();
+      
+      // Standard items
+      if (build.itemsSlots) {
+        Object.keys(build.itemsSlots).forEach(s => neededSlots.add(s.toLowerCase()));
       }
       
+      // Advanced items
+      if (build.itemsAdvanced) {
+        Object.entries(build.itemsAdvanced).forEach(([slot, data]) => {
+          if (data && typeof data === 'object') {
+            const hasItems = Object.values(data).some(v => safeString(v).trim());
+            if (hasItems) neededSlots.add(slot.toLowerCase());
+          }
+        });
+      }
+      
+      // Mercenary
+      if (build.mercenaryGear) {
+        Object.keys(build.mercenaryGear).forEach(s => {
+          if (s === 'chest') neededSlots.add('body');
+          else neededSlots.add(s.toLowerCase());
+        });
+      }
+      
+      // Flasks
+      if (build.flasks && build.flasks.some(f => safeString(f).trim())) {
+        neededSlots.add('flask');
+      }
+
+      // 2. Load categories only for those slots
+      const slotsArray = Array.from(neededSlots);
+      
+      const loadCategoryItems = async (slot: string) => {
+        const cats = getItemCategoriesForSlot(slot);
+        if (!cats.length) return;
+        
+        for (const cat of cats) {
+          const baseId = String(cat.id || '').trim();
+          if (!baseId) continue;
+          const cacheKey = baseId.toLowerCase();
+          
+          if (itemCacheRef.current[cacheKey]?.items?.length) continue;
+          
+          try {
+            const snap = await getDocs(collection(heroSiegeBrasilDb(), 'item_categories', baseId, 'items'));
+            const items: ItemRow[] = [];
+            for (const s of snap.docs) {
+              const data = s.data() as any;
+              items.push({
+                id: s.id,
+                name: safeString(data?.name) || undefined,
+                rarity: safeString(data?.rarity) || undefined,
+                image: safeString(data?.image) || undefined,
+                img: safeString(data?.img) || undefined,
+              });
+            }
+            const byName = new Map<string, ItemRow>();
+            for (const it of items) {
+              const n = String(it.name || '').trim().toLowerCase();
+              if (n && !byName.has(n)) byName.set(n, it);
+            }
+            itemCacheRef.current[cacheKey] = { items, byName };
+            if (alive) setCacheVersion(v => v + 1);
+          } catch (err) {
+            console.error(`Error loading items for category ${baseId}:`, err);
+          }
+        }
+      };
+
+      await Promise.all(slotsArray.map(slot => loadCategoryItems(slot)));
       if (alive) setItemsLoaded(true);
     };
 
@@ -484,14 +541,40 @@ export function BuildPage() {
       setLoading(true);
       setError(null);
       try {
-        const buildId = typeof id === 'string' ? id : '';
-        if (!buildId) throw new Error('Build ID is missing.');
-        const snap = await getDoc(doc(firestore, 'builds', buildId));
-        if (!snap.exists()) throw new Error('Build not found.');
-        const data = snap.data() as any;
+        const identifier = typeof id === 'string' ? id : '';
+        if (!identifier) throw new Error('Build ID or Slug is missing.');
+        
+        // 1. Try to get by ID first
+        let buildDoc = await getDoc(doc(firestore, 'builds', identifier));
+        let buildData = buildDoc.exists() ? buildDoc.data() : null;
+        let buildId = buildDoc.id;
+
+        // 2. If not found by ID, try to query by slug
+        if (!buildData) {
+          const q = query(collection(firestore, 'builds'), where('slug', '==', identifier), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            buildDoc = snap.docs[0];
+            buildData = buildDoc.data();
+            buildId = buildDoc.id;
+          }
+        }
+
+        if (!buildData) throw new Error('Build not found.');
+        
+        const data = buildData as any;
+        const currentSlug = safeString(data?.slug);
+        
+        // If accessed by ID but slug exists, redirect to slug URL
+        if (identifier === buildId && currentSlug && identifier !== currentSlug) {
+          navigate(`/build/${encodeURIComponent(currentSlug)}`, { replace: true });
+          return;
+        }
+
         setBuild({
-          id: snap.id,
-          title: safeString(data?.title) || snap.id,
+          id: buildId,
+          title: safeString(data?.title) || buildId,
+          slug: currentSlug || null,
           excerpt: safeString(data?.excerpt) || null,
           content: safeString(data?.content) || null,
           classKey: safeClassKey(data?.classKey),
@@ -522,6 +605,8 @@ export function BuildPage() {
           ratingAvg: safeNumber(data?.ratingAvg),
           ratingCount: safeNumber(data?.ratingCount),
           ratingSum: safeNumber(data?.ratingSum),
+          incarnationTreeLink: safeString(data?.incarnationTreeLink),
+          etherTreeLink: safeString(data?.etherTreeLink),
           publishedAt: (data?.publishedAt as Timestamp) ?? null,
           createdAt: (data?.createdAt as Timestamp) ?? null,
           updatedAt: (data?.updatedAt as Timestamp) ?? null,
@@ -557,7 +642,7 @@ export function BuildPage() {
         '@context': 'https://schema.org',
         '@type': 'WebPage',
         name: title,
-        url: build?.id ? `${baseUrl}/build/${encodeURIComponent(build.id)}` : baseUrl,
+        url: build?.slug ? `${baseUrl}/build/${encodeURIComponent(build.slug)}` : build?.id ? `${baseUrl}/build/${encodeURIComponent(build.id)}` : baseUrl,
       }
     ];
   }, [build]);
@@ -628,6 +713,7 @@ export function BuildPage() {
               <Circle className="w-2 h-2 fill-current" />
               Attributes
             </div>
+            
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {(
                 [
@@ -642,12 +728,14 @@ export function BuildPage() {
                 const val = (build.stats as any)?.[it.key] || 0;
                 if (val <= 0) return null;
                 return (
-                  <div key={it.key} className="flex items-center justify-between bg-brand-bg/50 border rounded-xl px-4 py-2.5" style={{ borderColor: `${it.color}30` }}>
-                    <div className="flex items-center gap-2.5" style={{ color: it.color }}>
-                      <AttributePentagramIcon color={it.color} />
-                      <span className="font-bold text-[10px] uppercase tracking-wider">{it.label}</span>
+                  <div key={it.key} className="flex items-center justify-between bg-white border rounded-2xl px-4 py-3 shadow-sm transition-all hover:shadow-md" style={{ borderColor: `${it.color}30` }}>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl" style={{ backgroundColor: `${it.color}15` }}>
+                        <AttributePentagramIcon color={it.color} />
+                      </div>
+                      <span className="font-black text-[11px] uppercase tracking-widest" style={{ color: it.color }}>{it.label}</span>
                     </div>
-                    <span className="font-black text-sm text-brand-darker italic">{val}</span>
+                    <span className="font-black text-xl text-brand-darker italic tracking-tighter">{val}</span>
                   </div>
                 );
               })}
@@ -655,8 +743,71 @@ export function BuildPage() {
           </div>
         )}
 
+        {(build.incarnationTreeLink || build.etherTreeLink) && (
+          <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
+            <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-4 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
+              <Circle className="w-2 h-2 fill-current" />
+              Special Skill Trees
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {build.incarnationTreeLink && (
+                  <a 
+                    href={build.incarnationTreeLink} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="group flex items-center justify-between p-4 bg-brand-bg/50 border border-brand-dark/10 rounded-2xl hover:border-brand-orange hover:bg-brand-orange/5 transition-all shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-white border border-brand-dark/5 group-hover:scale-110 transition-transform">
+                        <Plus className="w-4 h-4 text-brand-orange" />
+                      </div>
+                      <div className="text-left">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40 leading-none mb-1">External Link</div>
+                        <div className="text-sm font-black text-brand-darker uppercase italic tracking-tight">Incarnation Tree</div>
+                      </div>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-white border border-brand-dark/10 flex items-center justify-center group-hover:bg-brand-orange group-hover:text-white transition-colors">
+                      <Star className="w-3 h-3 fill-current" />
+                    </div>
+                  </a>
+                )}
+                {build.etherTreeLink && (
+                  <a 
+                    href={build.etherTreeLink} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="group flex items-center justify-between p-4 bg-brand-bg/50 border border-brand-dark/10 rounded-2xl hover:border-brand-orange hover:bg-brand-orange/5 transition-all shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-xl bg-white border border-brand-dark/5 group-hover:scale-110 transition-transform">
+                        <Plus className="w-4 h-4 text-brand-orange" />
+                      </div>
+                      <div className="text-left">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40 leading-none mb-1">External Link</div>
+                        <div className="text-sm font-black text-brand-darker uppercase italic tracking-tight">Ether Tree</div>
+                      </div>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-white border border-brand-dark/10 flex items-center justify-center group-hover:bg-brand-orange group-hover:text-white transition-colors">
+                      <Star className="w-3 h-3 fill-current" />
+                    </div>
+                  </a>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2 p-3 bg-brand-orange/5 border border-brand-orange/10 rounded-xl">
+                <Circle className="w-3 h-3 text-brand-orange fill-current animate-pulse" />
+                <p className="text-[11px] font-bold text-brand-darker/60 uppercase tracking-wider">
+                  Click the boxes above to view the external skill trees in a separate screen.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {build.itemsAdvanced && (
+          {build.itemsAdvanced ? (
             <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
               <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-6 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
                 <Circle className="w-2 h-2 fill-current" />
@@ -682,7 +833,7 @@ export function BuildPage() {
                   if (!hasAny) return null;
                   return (
                     <div key={group.slot} className="space-y-3">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-brand-darker border-l-4 border-brand-orange pl-2">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-brand-orange border-l-4 border-brand-orange pl-2 bg-brand-orange/5 py-1 rounded-r-lg">
                         {group.label}
                       </div>
                       <div className="space-y-2">
@@ -692,12 +843,16 @@ export function BuildPage() {
                           const img = getItemImageForSlot(group.slot === 'ring' ? 'ring' : group.slot, val);
                           const isBis = !!(p as any).tag;
                           return (
-                            <div key={p.key} className={`flex items-center gap-3 p-2.5 rounded-xl border ${isBis ? 'bg-green-50/50 border-green-200/50' : 'bg-brand-bg/50 border-brand-dark/5'}`}>
-                              <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1.5 shadow-sm">
-                                <img src={img} alt={val} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
+                            <div key={p.key} className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all hover:shadow-md ${isBis ? 'bg-green-50/50 border-green-200/50' : 'bg-brand-bg/50 border-brand-dark/5'}`}>
+                              <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1.5 shadow-sm group-hover:scale-110 transition-transform">
+                                {img ? (
+                                  <img src={img} alt={val} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
+                                ) : (
+                                  <div className="w-5 h-5 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin" />
+                                )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="text-[8px] font-black uppercase tracking-widest text-brand-darker/30">{(p as any).tag || p.label}</div>
+                                <div className={`text-[8px] font-black uppercase tracking-widest ${isBis ? 'text-green-600' : 'text-brand-darker/30'}`}>{(p as any).tag || p.label}</div>
                                 <div className="text-xs font-bold text-brand-darker truncate">{val}</div>
                               </div>
                             </div>
@@ -709,7 +864,35 @@ export function BuildPage() {
                 })}
               </div>
             </div>
-          )}
+          ) : build.itemsSlots && Object.keys(build.itemsSlots).length > 0 ? (
+            <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
+              <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-4 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
+                <Circle className="w-2 h-2 fill-current" />
+                Equipment
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {Object.entries(build.itemsSlots).map(([slot, value]) => {
+                  if (!value) return null;
+                  const img = getItemImageForSlot(slot, value);
+                  return (
+                    <div key={slot} className="bg-white border border-brand-dark/10 rounded-2xl p-4 flex items-center gap-4 hover:border-brand-orange/30 transition-all shadow-sm group">
+                      <div className="w-14 h-14 rounded-xl bg-brand-bg border border-brand-dark/5 flex items-center justify-center p-2 group-hover:scale-110 transition-transform">
+                        {img ? (
+                          <img src={img} alt={slot} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
+                        ) : (
+                          <div className="w-6 h-6 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-brand-darker/30">{slot}</div>
+                        <div className="text-sm font-bold text-brand-darker">{value}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {build.skillPoints && classSkillsData && (
             <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
@@ -780,9 +963,18 @@ export function BuildPage() {
                         const itemSlot = slot === 'chest' ? 'body' : slot;
                         const img = getItemImageForSlot(itemSlot, val);
                         return (
-                          <div key={slot} className="flex items-center gap-2 bg-white border border-brand-dark/10 rounded-xl p-2">
-                            <img src={img} alt={val} className="w-6 h-6 object-contain pixelated" onError={onItemImageError} />
-                            <span className="text-[10px] font-bold text-brand-darker/80 truncate">{val}</span>
+                          <div key={slot} className="flex items-center gap-3 p-3 bg-brand-bg/50 border border-brand-dark/5 rounded-xl flex-1 min-w-[140px] hover:shadow-md transition-all">
+                            <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1.5 shadow-sm group-hover:scale-110 transition-transform">
+                              {img ? (
+                                <img src={img} alt={val} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
+                              ) : (
+                                <div className="w-5 h-5 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[8px] font-black uppercase tracking-widest text-brand-orange border-l-2 border-brand-orange pl-1 mb-0.5">{slot === 'chest' ? 'Body' : slot}</div>
+                              <div className="text-xs font-bold text-brand-darker truncate">{val}</div>
+                            </div>
                           </div>
                         );
                       })}
@@ -791,56 +983,68 @@ export function BuildPage() {
             </div>
           )}
 
-          {Array.isArray(build.relics) && build.relics.some(r => r) && (
-            <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
-              <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-4 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
-                <Circle className="w-2 h-2 fill-current" />
-                Relics
+          <div className="space-y-6">
+            {Array.isArray(build.relics) && build.relics.some(r => r) && (
+              <div className="bg-white border border-brand-dark/10 rounded-2xl p-5 shadow-sm">
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-[11px] mb-3 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
+                  <Circle className="w-1.5 h-1.5 fill-current" />
+                  Relics
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {build.relics.map((r, i) => {
+                    if (!r) return null;
+                    const img = getRelicImageSrc(r);
+                    const isFifth = i === 4;
+                    return (
+                      <div 
+                        key={i} 
+                        className={`flex items-center gap-1.5 border rounded-lg px-2 py-1 transition-all ${
+                          isFifth ? 'bg-red-50 border-red-200 text-red-900 shadow-sm' : 'bg-brand-bg/50 border-brand-dark/10 text-brand-darker/80'
+                        }`}
+                      >
+                        {img && <img src={img} alt={r} className="w-4 h-4 object-contain pixelated" onError={e => e.currentTarget.style.display = 'none'} />}
+                        <span className="text-[10px] font-bold">{r}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {build.relics.filter(Boolean).map((r, i) => {
-                  const img = getRelicImageSrc(r!);
-                  const isFifth = i === 4;
-                  return (
-                    <div 
-                      key={i} 
-                      className={`flex items-center gap-2 border rounded-xl px-2.5 py-1.5 transition-all ${
-                        isFifth ? 'bg-red-50 border-red-200 text-red-900 shadow-sm' : 'bg-brand-bg/50 border-brand-dark/10 text-brand-darker/80'
-                      }`}
-                    >
-                      {img && <img src={img} alt={r!} className="w-5 h-5 object-contain pixelated" onError={e => e.currentTarget.style.display = 'none'} />}
-                      <span className="text-[11px] font-bold">{r}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            )}
 
-          {Array.isArray(build.flasks) && build.flasks.some(f => safeString(f).trim()) && (
-            <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
-              <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-4 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
-                <Circle className="w-2 h-2 fill-current" />
-                Flasks
+            {Array.isArray(build.flasks) && build.flasks.some(f => safeString(f).trim()) && (
+              <div className="bg-white border border-brand-dark/10 rounded-2xl p-5 shadow-sm">
+                <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-[11px] mb-3 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
+                  <Circle className="w-1.5 h-1.5 fill-current" />
+                  Flasks
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {build.flasks.map((f, i) => {
+                    const val = safeString(f).trim();
+                    if (!val) return null;
+                    const img = getItemImageForSlot('flask', val);
+                    return (
+                      <div key={i} className="flex flex-col items-center gap-1.5 p-2 bg-brand-bg/50 border border-brand-dark/5 rounded-xl hover:shadow-md transition-all group">
+                        <div className="w-10 h-10 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center p-1.5 shadow-sm group-hover:scale-110 transition-transform">
+                          {img ? (
+                            <img src={img} alt={val} className="w-full h-full object-contain pixelated" onError={onItemImageError} />
+                          ) : (
+                            <div className="w-4 h-4 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin" />
+                          )}
+                        </div>
+                        <div className="text-center min-w-0 w-full">
+                          <div className="text-[7px] font-black uppercase tracking-widest text-brand-orange">F{i + 1}</div>
+                          <div className="text-[9px] font-bold text-brand-darker truncate">{val}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {build.flasks.map((f, i) => {
-                  const val = safeString(f).trim();
-                  if (!val) return null;
-                  const img = getItemImageForSlot('flask', val);
-                  return (
-                    <div key={i} className="flex items-center gap-2 bg-brand-bg/50 border border-brand-dark/10 rounded-xl px-2.5 py-1.5">
-                      <img src={img} alt={val} className="w-6 h-6 object-contain pixelated" onError={onItemImageError} />
-                      <span className="text-[11px] font-bold text-brand-darker/80">{val}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {build.content && (
-            <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
+            <div className="md:col-span-2 bg-white border border-brand-dark/10 rounded-2xl p-6 shadow-sm">
               <div className="font-heading font-bold uppercase tracking-widest text-brand-orange text-sm mb-4 border-b border-brand-orange/10 pb-2 flex items-center gap-2">
                 <Circle className="w-2 h-2 fill-current" />
                 Full Details
@@ -854,8 +1058,14 @@ export function BuildPage() {
   };
 
   return (
-    <StandardPage title={pageTitle} description={pageDescription} structuredData={structuredData} noindex={noindex}>
+    <StandardPage title={pageTitle} description={pageDescription} canonicalPath={build?.slug ? `/build/${encodeURIComponent(build.slug)}` : build?.id ? `/build/${encodeURIComponent(build.id)}` : '/build'} structuredData={structuredData} noindex={noindex}>
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
+        <div className="mb-8">
+          <Link to="/forum" className="inline-flex items-center gap-2 text-brand-darker/60 hover:text-brand-orange transition-colors font-bold uppercase tracking-widest text-[10px]">
+            <ArrowLeft className="w-3 h-3" />
+            Back to Forum
+          </Link>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 md:gap-12">
           <div className="lg:col-span-3">
             <div className="mb-8 border-b border-brand-dark/10 pb-6">

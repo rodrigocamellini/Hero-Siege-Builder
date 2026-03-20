@@ -10,6 +10,8 @@ import { SeasonCountdown } from './SeasonCountdown';
 
 type PodiumEntry = { classKey: ClassKey; votes: number };
 type TopBuilder = { uid: string; nick: string; photoURL: string | null; buildCount: number; avgRating: number };
+type MediaItem = { title: string; image: string; link: string };
+type MediaSettings = { site: MediaItem; discord: MediaItem; reddit: MediaItem };
 
 function isTier(v: unknown): v is Tier {
   return typeof v === 'string' && (tierOrder as readonly string[]).includes(v);
@@ -23,6 +25,19 @@ export function Sidebar({ t }: { t: Translation }) {
   const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
   const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
   const [topBuilders, setTopBuilders] = useState<TopBuilder[] | null>(null);
+  const [media, setMedia] = useState<MediaSettings | null>(null);
+
+  useEffect(() => {
+    const loadMedia = async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'appSettings', 'media'));
+        if (snap.exists()) setMedia(snap.data() as MediaSettings);
+      } catch (err) {
+        console.error('Error loading media settings:', err);
+      }
+    };
+    void loadMedia();
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -183,6 +198,41 @@ export function Sidebar({ t }: { t: Translation }) {
   return (
     <aside className="space-y-8">
       <SeasonCountdown t={t} />
+
+      {media && (
+        <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
+          <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight">Official Media</h3>
+          <div className="grid grid-cols-3 gap-4">
+            {(['site', 'discord', 'reddit'] as const).map((key) => {
+              const item = media[key];
+              if (!item) return null;
+              return (
+                <a
+                  key={key}
+                  href={item.link || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-col items-center gap-2 group"
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40 group-hover:text-brand-orange transition-colors">
+                    {item.title}
+                  </span>
+                  <div className="w-full aspect-square bg-brand-bg rounded-xl border border-brand-dark/5 flex items-center justify-center p-2.5 group-hover:border-brand-orange/30 group-hover:bg-brand-orange/5 transition-all shadow-sm">
+                    <img
+                      src={`/images/${item.image}`}
+                      alt={item.title}
+                      className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform"
+                      onError={(e) => {
+                        e.currentTarget.src = '/images/herosiege.png';
+                      }}
+                    />
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <div className="bg-brand-darker p-6 rounded-2xl border border-white/5 text-center relative overflow-hidden group">

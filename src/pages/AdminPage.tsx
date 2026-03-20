@@ -69,6 +69,7 @@ function firestoreErrorMessage(err: unknown) {
 type AdminBuildRow = {
   id: string;
   title: string;
+  slug?: string;
   classKey: string;
   authorNick: string | null;
   status: string;
@@ -115,6 +116,7 @@ function AdminBuildsPanel() {
         return {
           id: d.id,
           title: safeString(data?.title) || d.id,
+          slug: safeString(data?.slug) || undefined,
           classKey: safeString(data?.classKey) || '',
           authorNick: safeString(data?.authorNick) || null,
           status: safeString(data?.status) || '',
@@ -267,8 +269,8 @@ function AdminBuildsPanel() {
                   {r.ratingCount > 0 ? `${r.ratingAvg.toFixed(2)} (${r.ratingCount})` : 'No ratings'}
                 </div>
                 <div className="mt-2">
-                  <a
-                    href={`/build/${encodeURIComponent(r.id)}`}
+                  <a 
+                    href={`/build/${encodeURIComponent(r.slug || r.id)}`}
                     className="text-xs font-bold uppercase tracking-widest text-brand-orange hover:underline"
                     target="_blank"
                     rel="noreferrer"

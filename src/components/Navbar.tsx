@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Search, Menu, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Language, Translation } from '../i18n/translations';
@@ -9,6 +9,18 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileDatabaseOpen, setIsMobileDatabaseOpen] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
+  const location = useLocation();
+
+  const isPathActive = (href: string) => {
+    if (href === '#') return false;
+    if (href === '/') return location.pathname === '/';
+    return location.pathname.startsWith(href);
+  };
+
+  const isChildActive = (children?: { href: string }[]) => {
+    if (!children) return false;
+    return children.some(child => isPathActive(child.href));
+  };
 
   const navItems = [
     { label: t.nav[0], href: '/' },
@@ -57,10 +69,10 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
               <div key={item.label} className="relative group">
                 <button
                   type="button"
-                  className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange text-brand-darker inline-flex items-center gap-2`}
+                  className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange inline-flex items-center gap-2 ${isChildActive(item.children) ? 'text-brand-orange' : 'text-brand-darker'}`}
                 >
                   {item.label}
-                  <ChevronDown className="w-4 h-4 opacity-70 group-hover:opacity-100 transition-opacity" />
+                  <ChevronDown className={`w-4 h-4 transition-transform ${isChildActive(item.children) ? 'text-brand-orange' : 'opacity-70 group-hover:opacity-100'}`} />
                 </button>
                 <div className="absolute left-0 top-full pt-2 hidden group-hover:block">
                   <div className="min-w-48 bg-white border border-brand-dark/10 rounded-2xl shadow-xl overflow-hidden">
@@ -87,7 +99,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
               <Link
                 key={item.label}
                 to={item.href}
-                className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange ${idx === 0 ? 'nav-link-active' : 'text-brand-darker'}`}
+                className={`font-heading font-bold text-sm uppercase tracking-wider transition-all hover:text-brand-orange ${isPathActive(item.href) ? 'nav-link-active' : 'text-brand-darker'}`}
               >
                 {item.label}
               </Link>
@@ -152,7 +164,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
             <div className="flex flex-col p-4 space-y-4">
               <Link
                 to="/"
-                className="font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors"
+                className={`font-heading font-bold text-lg uppercase tracking-wider transition-colors ${isPathActive('/') ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
                 onClick={() => setIsMenuOpen(false)}
               >
                 {navItems[0].label}
@@ -162,7 +174,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                 <button
                   type="button"
                   onClick={() => setIsMobileDatabaseOpen((v) => !v)}
-                  className="w-full font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors flex items-center justify-between"
+                  className={`w-full font-heading font-bold text-lg uppercase tracking-wider transition-colors flex items-center justify-between ${isChildActive(navItems[1].children) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
                 >
                   <span>{navItems[1].label}</span>
                   <ChevronDown className={`w-5 h-5 transition-transform ${isMobileDatabaseOpen ? 'rotate-180' : ''}`} />
@@ -173,7 +185,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                       <Link
                         key={child.label}
                         to={child.href}
-                        className="font-heading font-bold text-sm uppercase tracking-wider text-brand-darker/80 hover:text-brand-orange transition-colors"
+                        className={`font-heading font-bold text-sm uppercase tracking-wider transition-colors ${isPathActive(child.href) ? 'text-brand-orange' : 'text-brand-darker/80 hover:text-brand-orange'}`}
                         onClick={() => setIsMenuOpen(false)}
                       >
                         {child.label}
@@ -187,7 +199,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                 <button
                   type="button"
                   onClick={() => setIsMobileTreeOpen((v) => !v)}
-                  className="w-full font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors flex items-center justify-between"
+                  className={`w-full font-heading font-bold text-lg uppercase tracking-wider transition-colors flex items-center justify-between ${isChildActive(navItems[2].children) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
                 >
                   <span>{navItems[2].label}</span>
                   <ChevronDown className={`w-5 h-5 transition-transform ${isMobileTreeOpen ? 'rotate-180' : ''}`} />
@@ -198,7 +210,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                       <Link
                         key={child.label}
                         to={child.href}
-                        className="font-heading font-bold text-sm uppercase tracking-wider text-brand-darker/80 hover:text-brand-orange transition-colors flex items-center justify-between gap-4"
+                        className={`font-heading font-bold text-sm uppercase tracking-wider transition-colors flex items-center justify-between gap-4 ${isPathActive(child.href) ? 'text-brand-orange' : 'text-brand-darker/80 hover:text-brand-orange'}`}
                         onClick={() => setIsMenuOpen(false)}
                       >
                         <span>{child.label}</span>
@@ -217,7 +229,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                 <Link
                   key={item.label}
                   to={item.href}
-                  className="font-heading font-bold text-lg uppercase tracking-wider text-brand-darker hover:text-brand-orange transition-colors"
+                  className={`font-heading font-bold text-lg uppercase tracking-wider transition-colors ${isPathActive(item.href) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
                   onClick={() => setIsMenuOpen(false)}
                 >
                   {item.label}

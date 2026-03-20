@@ -157,7 +157,7 @@ async function dynamicPathsFromFirestore(templates) {
         const name = typeof d?.name === 'string' ? d.name : '';
         const docId = name ? name.split('/').pop() : '';
         const slug = getStringField(fields, 'slug');
-        const path = slug ? `/builds/${slug}` : docId ? `/build/${docId}` : null;
+        const path = slug ? `/build/${slug}` : docId ? `/build/${docId}` : null;
         if (path) out.push(path);
       }
       if (out.length) break;

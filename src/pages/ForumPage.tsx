@@ -54,6 +54,7 @@ import { translations } from '../i18n/translations';
 import relicMap from '../../hero-siege-brasil/src/relicsMap.json';
 import { CHARM_DB } from '../data/charmDb';
 import { EXTRA_SHIELDS } from '../data/extraShields';
+import { slugify } from '../utils/slugify';
 
 type BuildStatus = 'PENDING' | 'PUBLISHED' | 'REJECTED' | 'DRAFT';
 type BuildTier = 'starterGame' | 'midGame' | 'endGame';
@@ -70,6 +71,7 @@ interface BuildStats {
 interface BuildRow {
   id: string;
   title: string;
+  slug?: string;
   excerpt: string | null;
   content: string | null;
   classKey: ClassKey;
@@ -81,6 +83,8 @@ interface BuildRow {
   featured: boolean;
   ratingAvg: number;
   ratingCount: number;
+  incarnationTreeLink?: string;
+  etherTreeLink?: string;
   publishedAt: Timestamp | null;
   createdAt: Timestamp | null;
 }
@@ -328,6 +332,8 @@ export function ForumPage() {
 
   // Skill Trees state
   const [nbSkillPoints, setNbSkillPoints] = useState<Record<string, number>>({});
+  const [nbIncarnationTree, setNbIncarnationTree] = useState('');
+  const [nbEtherTree, setNbEtherTree] = useState('');
   const [classSkillsData, setClassSkillsData] = useState<{
     t1: string;
     t2: string;
@@ -415,6 +421,7 @@ export function ForumPage() {
           return {
             id: d.id,
             title: safeString(data?.title) || d.id,
+            slug: safeString(data?.slug) || undefined,
             excerpt: safeString(data?.excerpt) || null,
             content: safeString(data?.content) || null,
             classKey: safeClassKey(data?.classKey),
@@ -443,6 +450,7 @@ export function ForumPage() {
               return {
                 id: d.id,
                 title: safeString(data?.title) || d.id,
+                slug: safeString(data?.slug) || undefined,
                 excerpt: safeString(data?.excerpt) || null,
                 content: safeString(data?.content) || null,
                 classKey: safeClassKey(data?.classKey),
@@ -564,6 +572,8 @@ export function ForumPage() {
     setNbRelics([null, null, null, null, null]);
     setNbCharms([]);
     setNbSkillPoints({});
+    setNbIncarnationTree('');
+    setNbEtherTree('');
     setNbMercenaryType('');
     setNbMercenaryGear({ weapon: '', shield: '', helmet: '', chest: '', belt: '', boots: '', gloves: '' });
     setNbItems({
@@ -635,6 +645,8 @@ export function ForumPage() {
       setNbRelics(Array.isArray(data.relics) ? data.relics : [null, null, null, null, null]);
       setNbCharms(Array.isArray(data.charms) ? data.charms : []);
       setNbSkillPoints(data.skillPoints || {});
+      setNbIncarnationTree(data.incarnationTreeLink || '');
+      setNbEtherTree(data.etherTreeLink || '');
       setNbMercenaryType(data.mercenaryType || '');
       setNbMercenaryGear({
         weapon: data.mercenaryGear?.weapon || '',
@@ -694,8 +706,9 @@ export function ForumPage() {
     if (!nbTitle.trim()) return setSubmitError('Title is required.');
     setSubmitting(true);
     try {
-      const payload: any = {
+      const payload = {
         title: nbTitle.trim(),
+        slug: slugify(nbTitle),
         excerpt: nbExcerpt.trim() || null,
         content: nbContent.trim() || null,
         classKey: nbClass,
@@ -705,6 +718,8 @@ export function ForumPage() {
         relics: nbRelics.map((r) => (r ? String(r).trim() : null)),
         charms: nbCharms.map((c) => String(c).trim()).filter(Boolean),
         skillPoints: nbSkillPoints,
+        incarnationTreeLink: nbIncarnationTree.trim(),
+        etherTreeLink: nbEtherTree.trim(),
         mercenaryType: nbMercenaryType || null,
         mercenaryGear: nbMercenaryType ? nbMercenaryGear : null,
         itemsAdvanced: {
@@ -741,6 +756,12 @@ export function ForumPage() {
       }
       setSubmitOk(true);
       setNewBuildOpen(false);
+      // Force reload list to show updated slug links
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set('t', Date.now().toString());
+        return next;
+      });
     } catch (e) {
       setSubmitError(firestoreErrorMessage(e));
     } finally {
@@ -1159,7 +1180,7 @@ export function ForumPage() {
                   return (
                     <Link
                       key={b.id}
-                      to={`/build/${b.id}`}
+                      to={`/build/${b.slug || b.id}`}
                       className="block p-4 rounded-2xl border border-brand-dark/10 bg-brand-bg/40 hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1275,6 +1296,38 @@ export function ForumPage() {
                     <button type="button" onClick={() => applyPrefixToLines('- ')} className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center"><List className="w-3.5 h-3.5" /></button>
                   </div>
                   <textarea ref={nbContentRef} value={nbContent} onChange={(e) => setNbContent(e.target.value)} className="w-full bg-white border border-brand-dark/10 rounded-xl p-3 text-sm focus:outline-none focus:border-brand-orange transition-colors min-h-40" placeholder="Tips, skills, rotation..." />
+                </div>
+              </section>
+
+              {/* Extra Skill Trees Links */}
+              <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker flex items-center gap-2">
+                      <Plus className="w-3 h-3 text-brand-orange" />
+                      Incarnation Tree Link
+                    </label>
+                    <input
+                      type="text"
+                      value={nbIncarnationTree}
+                      onChange={(e) => setNbIncarnationTree(e.target.value)}
+                      placeholder="Paste Incarnation Tree link..."
+                      className="w-full bg-white border border-brand-dark/10 rounded-xl px-3 py-2 text-xs text-brand-darker focus:outline-none focus:border-brand-orange transition-all shadow-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker flex items-center gap-2">
+                      <Plus className="w-3 h-3 text-brand-orange" />
+                      Ether Tree Link
+                    </label>
+                    <input
+                      type="text"
+                      value={nbEtherTree}
+                      onChange={(e) => setNbEtherTree(e.target.value)}
+                      placeholder="Paste Ether Tree link..."
+                      className="w-full bg-white border border-brand-dark/10 rounded-xl px-3 py-2 text-xs text-brand-darker focus:outline-none focus:border-brand-orange transition-all shadow-sm"
+                    />
+                  </div>
                 </div>
               </section>
 

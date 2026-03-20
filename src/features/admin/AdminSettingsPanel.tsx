@@ -32,6 +32,14 @@ export function AdminSettingsPanel() {
   const [blogDeleteSaving, setBlogDeleteSaving] = useState(false);
   const [blogDeleteSavedOk, setBlogDeleteSavedOk] = useState(false);
 
+  const [mediaSettings, setMediaSettings] = useState({
+    site: { title: 'Site', image: 'logopas.webp', link: '' },
+    discord: { title: 'Discord', image: 'discord.webp', link: '' },
+    reddit: { title: 'Reddit', image: 'reddit.webp', link: '' },
+  });
+  const [mediaSaving, setMediaSaving] = useState(false);
+  const [mediaSavedOk, setMediaSavedOk] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       setError(null);
@@ -55,6 +63,11 @@ export function AdminSettingsPanel() {
           r === 'USER' || r === 'CONTRIBUTOR' || r === 'MODERATOR' || r === 'PARTNER' || r === 'DEVELOPER',
         );
         setBlogDeleteRoles(deleteNormalized.length ? deleteNormalized : ['DEVELOPER']);
+
+        const mediaSnap = await getDoc(doc(firestore, 'appSettings', 'media'));
+        if (mediaSnap.exists()) {
+          setMediaSettings(mediaSnap.data() as any);
+        }
       } catch (err) {
         setError(firestoreErrorMessage(err));
       } finally {
@@ -110,6 +123,20 @@ export function AdminSettingsPanel() {
       setError(firestoreErrorMessage(err));
     } finally {
       setBlogDeleteSaving(false);
+    }
+  }
+
+  async function saveMediaSettings() {
+    setError(null);
+    setMediaSavedOk(false);
+    setMediaSaving(true);
+    try {
+      await setDoc(doc(firestore, 'appSettings', 'media'), { ...mediaSettings, updatedAt: serverTimestamp() });
+      setMediaSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setMediaSaving(false);
     }
   }
 
@@ -332,6 +359,62 @@ export function AdminSettingsPanel() {
           </div>
 
           {blogDeleteSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Permissões de exclusão atualizadas.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Official Media</div>
+              <div className="text-sm font-bold text-brand-darker">Configurar links da sidebar</div>
+              <div className="text-xs text-brand-darker/60">Edite os títulos, imagens e links do Discord, Reddit e Site.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveMediaSettings()}
+              disabled={loading || mediaSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {mediaSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-6 space-y-6">
+            {(['site', 'discord', 'reddit'] as const).map((key) => (
+              <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Título</label>
+                  <input
+                    type="text"
+                    value={mediaSettings[key].title}
+                    onChange={(e) => setMediaSettings(prev => ({ ...prev, [key]: { ...prev[key], title: e.target.value } }))}
+                    className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Imagem (filename)</label>
+                  <input
+                    type="text"
+                    value={mediaSettings[key].image}
+                    onChange={(e) => setMediaSettings(prev => ({ ...prev, [key]: { ...prev[key], image: e.target.value } }))}
+                    className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Link</label>
+                  <input
+                    type="text"
+                    value={mediaSettings[key].link}
+                    onChange={(e) => setMediaSettings(prev => ({ ...prev, [key]: { ...prev[key], link: e.target.value } }))}
+                    className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {mediaSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Mídias oficiais atualizadas.</div> : null}
         </div>
       </div>
 
