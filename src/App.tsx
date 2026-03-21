@@ -13,6 +13,7 @@ import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { EtherTree } from './features/tree/EtherTree';
 import { IncarnationTree } from './features/tree/IncarnationTree';
 import { TeamPage } from './pages/TeamPage';
+import { PartnersPage } from './pages/PartnersPage';
 import { BlogPage } from './pages/BlogPage';
 import { BlogPostPage } from './pages/BlogPostPage';
 import { BlogEditorPage } from './pages/BlogEditorPage';
@@ -3748,6 +3749,7 @@ export default function App() {
         }
       />
       <Route path="/team" element={<TeamPage />} />
+      <Route path="/partners" element={<PartnersPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

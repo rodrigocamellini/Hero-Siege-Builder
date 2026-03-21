@@ -11,8 +11,9 @@ export function Footer({ t, currentYear }: { t: Translation; currentYear: number
     if (idx === 2) return '/tree';
     if (idx === 3) return '/blog';
     if (idx === 4) return '/forum';
-    if (idx === 5) return '/team';
-    if (idx === 6) return '/contact';
+    if (idx === 5) return '/partners';
+    if (idx === 6) return '/team';
+    if (idx === 7) return '/contact';
     return '/';
   }
 

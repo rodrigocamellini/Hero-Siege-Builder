@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
-import { ChevronDown, Crown, Star, Trophy, User } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, Crown, Star, Trophy, Twitch, User } from 'lucide-react';
 import type { Translation } from '../i18n/translations';
 import { classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
 import { firestore } from '../firebase';
@@ -12,6 +13,7 @@ type PodiumEntry = { classKey: ClassKey; votes: number };
 type TopBuilder = { uid: string; nick: string; photoURL: string | null; buildCount: number; avgRating: number };
 type MediaItem = { title: string; image: string; link: string };
 type MediaSettings = { site: MediaItem; discord: MediaItem; reddit: MediaItem };
+type PartnerRow = { id: string; twitchUsername: string; kickUrl: string; displayName: string; avatarUrl: string; exclusive: boolean; order: number };
 
 function isTier(v: unknown): v is Tier {
   return typeof v === 'string' && (tierOrder as readonly string[]).includes(v);
@@ -21,11 +23,129 @@ function isClassKey(v: unknown): v is ClassKey {
   return typeof v === 'string' && v in classNames;
 }
 
+function safeString(v: unknown) {
+  return typeof v === 'string' ? v : '';
+}
+
+function safeBoolean(v: unknown) {
+  return v === true;
+}
+
+function safeNumber(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function fetchTextWithTimeout(url: string, timeoutMs: number) {
+  const controller = new AbortController();
+  const id = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!r.ok) return null;
+    return await r.text();
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(id);
+  }
+}
+
+function inferLiveFromTwitchPageHtml(html: string) {
+  const h = html.toLowerCase();
+  if (/"islivebroadcast":true/.test(h)) return true;
+  if (/"islivebroadcast":false/.test(h)) return false;
+  if (/"islive":true/.test(h)) return true;
+  if (/"islive":false/.test(h)) return false;
+  if (/"broadcasttype":"live"/.test(h)) return true;
+  return false;
+}
+
+async function probeTwitchLive(username: string) {
+  const user = username.trim().toLowerCase();
+  if (!user) return false;
+
+  const decapiUrl = `https://decapi.me/twitch/uptime/${encodeURIComponent(user)}?offline_msg=OFFLINE`;
+  const decapiText = await fetchTextWithTimeout(decapiUrl, 2500);
+  if (decapiText) {
+    const t = decapiText.trim().toLowerCase();
+    if (t === 'offline' || t.includes('offline')) return false;
+    return true;
+  }
+
+  const twitchUrl = `https://www.twitch.tv/${encodeURIComponent(user)}`;
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(twitchUrl)}`;
+  const html = await fetchTextWithTimeout(proxyUrl, 3500);
+  if (!html) return false;
+  return inferLiveFromTwitchPageHtml(html);
+}
+
+function normalizeKickUrl(raw: string) {
+  const v = raw.trim();
+  if (!v) return '';
+  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+  if (v.startsWith('kick.com/')) return `https://${v}`;
+  if (v.includes('/')) return v;
+  return `https://kick.com/${v}`;
+}
+
+function extractKickSlug(kickUrl: string) {
+  const v = normalizeKickUrl(kickUrl);
+  if (!v) return '';
+  try {
+    const u = new URL(v);
+    const parts = u.pathname.split('/').map((s) => s.trim()).filter(Boolean);
+    return parts[0] ?? '';
+  } catch {
+    const s = v.replace(/^https?:\/\//, '').replace(/^kick\.com\//, '');
+    return s.split('/').filter(Boolean)[0] ?? '';
+  }
+}
+
+function inferLiveFromKickJsonText(text: string) {
+  try {
+    const j = JSON.parse(text) as any;
+    if (typeof j?.is_live === 'boolean') return j.is_live;
+    if (typeof j?.livestream?.is_live === 'boolean') return j.livestream.is_live;
+    if (j?.livestream && typeof j.livestream === 'object') return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function inferLiveFromKickHtml(html: string) {
+  const h = html.toLowerCase();
+  if (/"is_live":true/.test(h)) return true;
+  if (/"is_live":false/.test(h)) return false;
+  return false;
+}
+
+async function probeKickLive(kickUrl: string) {
+  const slug = extractKickSlug(kickUrl);
+  if (!slug) return false;
+
+  const apiUrl = `https://kick.com/api/v2/channels/${encodeURIComponent(slug)}`;
+  const apiProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}`;
+  const apiText = await fetchTextWithTimeout(apiProxyUrl, 2500);
+  if (apiText) {
+    return inferLiveFromKickJsonText(apiText);
+  }
+
+  const pageUrl = `https://kick.com/${encodeURIComponent(slug)}`;
+  const pageProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(pageUrl)}`;
+  const html = await fetchTextWithTimeout(pageProxyUrl, 3500);
+  if (!html) return false;
+  return inferLiveFromKickHtml(html);
+}
+
 export function Sidebar({ t }: { t: Translation }) {
   const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
   const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
   const [topBuilders, setTopBuilders] = useState<TopBuilder[] | null>(null);
   const [media, setMedia] = useState<MediaSettings | null>(null);
+  const [partnersList, setPartnersList] = useState<PartnerRow[]>([]);
+  const [featuredPartner, setFeaturedPartner] = useState<PartnerRow | null>(null);
+  const [featuredPartnerLive, setFeaturedPartnerLive] = useState<boolean | null>(null);
 
   useEffect(() => {
     const loadMedia = async () => {
@@ -38,6 +158,87 @@ export function Sidebar({ t }: { t: Translation }) {
     };
     void loadMedia();
   }, []);
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const snap = await getDocs(query(collection(firestore, 'partners'), limit(50)));
+        const list: PartnerRow[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: d.id,
+            twitchUsername: safeString(data?.twitchUsername).trim().toLowerCase(),
+            kickUrl: safeString(data?.kickUrl).trim(),
+            displayName: safeString(data?.displayName).trim(),
+            avatarUrl: safeString(data?.avatarUrl).trim(),
+            exclusive: safeBoolean(data?.exclusive),
+            order: safeNumber(data?.order),
+          };
+        });
+        list.sort((a, b) => {
+          const ax = a.exclusive ? 1 : 0;
+          const bx = b.exclusive ? 1 : 0;
+          if (ax !== bx) return bx - ax;
+          if (a.order !== b.order) return a.order - b.order;
+          return (a.displayName || a.twitchUsername).localeCompare(b.displayName || b.twitchUsername);
+        });
+        if (!stop) setPartnersList(list);
+      } catch {
+        if (!stop) setPartnersList([]);
+      }
+    };
+    void load();
+    return () => {
+      stop = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let stop = false;
+    const run = async () => {
+      if (partnersList.length === 0) {
+        if (!stop) {
+          setFeaturedPartner(null);
+          setFeaturedPartnerLive(null);
+        }
+        return;
+      }
+
+      let chosen: PartnerRow | null = null;
+      for (const p of partnersList.slice(0, 25)) {
+        if (p.twitchUsername) {
+          const live = await probeTwitchLive(p.twitchUsername);
+          if (live) {
+            chosen = p;
+            break;
+          }
+        } else if (p.kickUrl) {
+          const live = await probeKickLive(p.kickUrl);
+          if (live) {
+            chosen = p;
+            break;
+          }
+        }
+        if (stop) return;
+      }
+
+      if (stop) return;
+      if (chosen) {
+        setFeaturedPartner(chosen);
+        setFeaturedPartnerLive(true);
+      } else {
+        setFeaturedPartner(null);
+        setFeaturedPartnerLive(false);
+      }
+    };
+    void run();
+    const id = window.setInterval(() => void run(), 60 * 1000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [partnersList]);
 
   useEffect(() => {
     const load = async () => {
@@ -233,6 +434,72 @@ export function Sidebar({ t }: { t: Translation }) {
           </div>
         </div>
       )}
+
+      {featuredPartner ? (
+        <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="font-heading font-bold text-lg uppercase tracking-tight">Partner Spotlight</h3>
+            {featuredPartnerLive === true ? (
+              <span className="px-3 py-1 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-widest">
+                Live
+              </span>
+            ) : featuredPartnerLive === false ? (
+              <span className="px-3 py-1 rounded-full bg-brand-bg border border-brand-dark/10 text-[10px] font-black uppercase tracking-widest text-brand-darker/60">
+                Offline
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-full bg-brand-bg border border-brand-dark/10 text-[10px] font-black uppercase tracking-widest text-brand-darker/60">
+                Status
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center">
+              {featuredPartner.avatarUrl ? (
+                <img src={featuredPartner.avatarUrl} alt={featuredPartner.displayName || featuredPartner.twitchUsername} className="w-full h-full object-cover" />
+              ) : null}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-brand-darker truncate">{featuredPartner.displayName || featuredPartner.twitchUsername}</div>
+              {featuredPartner.twitchUsername ? (
+                <div className="text-xs text-brand-darker/60 truncate inline-flex items-center gap-1.5">
+                  <Twitch className="w-3.5 h-3.5 text-purple-600" />
+                  twitch.tv/{featuredPartner.twitchUsername}
+                </div>
+              ) : null}
+              {featuredPartner.kickUrl ? (
+                <div className="text-xs text-brand-darker/60 truncate inline-flex items-center gap-1.5">
+                  <span className="w-3.5 h-3.5 rounded-sm bg-green-600 text-white text-[10px] font-black grid place-items-center leading-none">K</span>
+                  kick.com/{extractKickSlug(featuredPartner.kickUrl)}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Link
+              to="/partners"
+              className="text-center px-3 py-2 rounded-xl bg-brand-bg border border-brand-dark/10 text-xs font-bold uppercase tracking-widest text-brand-darker hover:bg-white transition-colors"
+            >
+              Partners
+            </Link>
+            <a
+              href={featuredPartner.twitchUsername ? `https://twitch.tv/${featuredPartner.twitchUsername}` : normalizeKickUrl(featuredPartner.kickUrl)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-center px-3 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-purple-700 transition-colors inline-flex items-center justify-center gap-2"
+            >
+              {featuredPartner.twitchUsername ? (
+                <Twitch className="w-4 h-4" />
+              ) : (
+                <span className="w-4 h-4 rounded-sm bg-green-600 text-white text-[11px] font-black grid place-items-center leading-none">K</span>
+              )}
+              Watch
+            </a>
+          </div>
+        </div>
+      ) : null}
 
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <div className="bg-brand-darker p-6 rounded-2xl border border-white/5 text-center relative overflow-hidden group">

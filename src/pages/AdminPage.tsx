@@ -1,6 +1,6 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap } from 'lucide-react';
+import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
@@ -2249,6 +2249,17 @@ type TeamMember = {
   socials?: Partial<{ discord: string; twitch: string; youtube: string; site: string; github: string }>;
 };
 
+type PartnerRow = {
+  id: string;
+  twitchUsername: string;
+  kickUrl: string;
+  displayName: string;
+  description: string;
+  avatarUrl: string;
+  exclusive: boolean;
+  order: number;
+};
+
 const ROLES = [
   { value: 'legendary admin-main', label: 'Developer' },
   { value: 'angelic', label: 'Moderator' },
@@ -2258,6 +2269,376 @@ const ROLES = [
   { value: 'mythic', label: 'Editor' },
   { value: 'common', label: 'Support' },
 ];
+
+function AdminPartnersPanel() {
+  const [rows, setRows] = useState<PartnerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [queryText, setQueryText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [twitchUsername, setTwitchUsername] = useState('');
+  const [kickUrl, setKickUrl] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [description, setDescription] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [exclusive, setExclusive] = useState(false);
+  const [order, setOrder] = useState<number>(0);
+  const [saving, setSaving] = useState(false);
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(null);
+    const unsub = onSnapshot(
+      collection(firestore, 'partners'),
+      (snap) => {
+        const list: PartnerRow[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          list.push({
+            id: d.id,
+            twitchUsername: safeString(data?.twitchUsername).trim(),
+            kickUrl: safeString(data?.kickUrl).trim(),
+            displayName: safeString(data?.displayName).trim(),
+            description: safeString(data?.description),
+            avatarUrl: safeString(data?.avatarUrl).trim(),
+            exclusive: safeBoolean(data?.exclusive),
+            order: safeNumber(data?.order),
+          });
+        });
+        list.sort((a, b) => (a.order !== b.order ? a.order - b.order : (a.displayName || a.twitchUsername).localeCompare(b.displayName || b.twitchUsername)));
+        setRows(list);
+        setLoading(false);
+      },
+      (err) => {
+        setError(firestoreErrorMessage(err));
+        setRows([]);
+        setLoading(false);
+      },
+    );
+    return () => unsub();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = queryText.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((p) => {
+      return (
+        p.twitchUsername.toLowerCase().includes(q) ||
+        p.kickUrl.toLowerCase().includes(q) ||
+        p.displayName.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q)
+      );
+    });
+  }, [rows, queryText]);
+
+  const normalizeKickUrl = (raw: string) => {
+    const v = raw.trim();
+    if (!v) return '';
+    if (v.startsWith('http://') || v.startsWith('https://')) return v;
+    if (v.startsWith('kick.com/')) return `https://${v}`;
+    if (v.includes('/')) return v;
+    return `https://kick.com/${v}`;
+  };
+
+  const inferNameFromKickUrl = (u: string) => {
+    const v = u.trim();
+    if (!v) return '';
+    try {
+      const url = new URL(v.startsWith('http') ? v : `https://${v}`);
+      const parts = url.pathname.split('/').map((s) => s.trim()).filter(Boolean);
+      const slug = parts[0] ?? '';
+      return slug ? slug : '';
+    } catch {
+      const s = v.replace(/^https?:\/\//, '').replace(/^kick\.com\//, '');
+      const slug = s.split('/').filter(Boolean)[0] ?? '';
+      return slug;
+    }
+  };
+
+  const openNew = () => {
+    setError(null);
+    setEditingId(null);
+    setTwitchUsername('');
+    setKickUrl('');
+    setDisplayName('');
+    setDescription('');
+    setAvatarUrl('');
+    setExclusive(false);
+    setOrder(0);
+    setModalOpen(true);
+  };
+
+  const openEdit = (p: PartnerRow) => {
+    setError(null);
+    setEditingId(p.id);
+    setTwitchUsername(p.twitchUsername);
+    setKickUrl(p.kickUrl);
+    setDisplayName(p.displayName);
+    setDescription(p.description);
+    setAvatarUrl(p.avatarUrl);
+    setExclusive(p.exclusive);
+    setOrder(p.order);
+    setModalOpen(true);
+  };
+
+  const save = async () => {
+    setError(null);
+    const user = twitchUsername.trim().toLowerCase();
+    const kick = normalizeKickUrl(kickUrl);
+    if (!user && !kick) {
+      setError('Twitch username ou link do Kick é obrigatório.');
+      return;
+    }
+    const fallbackName = user || inferNameFromKickUrl(kick) || 'Partner';
+    const name = (displayName.trim() || fallbackName).trim();
+    setSaving(true);
+    try {
+      const payload = {
+        twitchUsername: user,
+        kickUrl: kick,
+        displayName: name,
+        description,
+        avatarUrl: avatarUrl.trim(),
+        exclusive,
+        order: Number.isFinite(order) ? order : 0,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingId) {
+        await setDoc(doc(firestore, 'partners', editingId), payload, { merge: true });
+      } else {
+        await addDoc(collection(firestore, 'partners'), { ...payload, createdAt: serverTimestamp() });
+      }
+      setModalOpen(false);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const del = async (id: string) => {
+    setError(null);
+    setSaving(true);
+    try {
+      await deleteDoc(doc(firestore, 'partners', id));
+      setConfirmDelId(null);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const seedSpacezone = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      await addDoc(collection(firestore, 'partners'), {
+        twitchUsername: 'spacezonetv',
+        kickUrl: '',
+        displayName: 'SpaceZone TV',
+        description: 'Streamer parceiro. Builds, gameplays e novidades em tempo real.',
+        avatarUrl: '',
+        exclusive: true,
+        order: 1,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white border border-brand-dark/10 rounded-2xl p-5">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="font-heading font-bold text-xl uppercase tracking-tight text-brand-darker">Partners</div>
+            <div className="text-xs text-brand-darker/60">Manage partner streamers displayed on the website.</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openNew}
+              className="inline-flex items-center gap-2 bg-brand-orange text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-orange/90 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Partner
+            </button>
+            {rows.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => void seedSpacezone()}
+                disabled={saving}
+                className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+              >
+                Seed SpaceZone
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-4 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/30" />
+          <input
+            value={queryText}
+            onChange={(e) => setQueryText(e.target.value)}
+            placeholder="Search partners..."
+            className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl py-2 pl-10 pr-4 text-sm outline-none focus:border-brand-orange/40"
+          />
+        </div>
+        {error ? <div className="mt-3 text-xs font-bold text-red-600">{error}</div> : null}
+      </div>
+
+      <div className="bg-white border border-brand-dark/10 rounded-2xl overflow-hidden">
+        {loading ? (
+          <div className="p-5 text-sm text-brand-darker/60">Loading...</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-5 text-sm text-brand-darker/60">No partners found.</div>
+        ) : (
+          <div className="divide-y divide-brand-dark/10">
+            {filtered.map((p) => (
+              <div key={p.id} className="p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="min-w-0 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-brand-bg border border-brand-dark/10 overflow-hidden flex items-center justify-center shrink-0">
+                    {p.avatarUrl ? <img src={p.avatarUrl} alt={p.displayName} className="w-full h-full object-cover" /> : null}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="font-bold text-brand-darker truncate">{p.displayName || p.twitchUsername}</div>
+                      {p.exclusive ? (
+                        <span className="px-2 py-0.5 rounded-full bg-purple-600 text-white text-[10px] font-bold uppercase tracking-widest">Exclusive</span>
+                      ) : null}
+                      {p.order ? (
+                        <span className="px-2 py-0.5 rounded-full bg-brand-bg border border-brand-dark/10 text-[10px] font-bold uppercase tracking-widest text-brand-darker/60">
+                          #{p.order}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-brand-darker/60 truncate">
+                      {p.twitchUsername ? `twitch.tv/${p.twitchUsername}` : p.kickUrl ? p.kickUrl : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(p)}
+                    className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelId(p.id)}
+                    className="inline-flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Modal open={modalOpen} title={editingId ? 'Edit Partner' : 'Add Partner'} onClose={() => setModalOpen(false)} maxWidthClassName="max-w-2xl">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-1">Twitch Username</label>
+              <input value={twitchUsername} onChange={(e) => setTwitchUsername(e.target.value)} className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-orange/40" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-1">Kick (link ou username)</label>
+              <input value={kickUrl} onChange={(e) => setKickUrl(e.target.value)} className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-orange/40" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-1">Display Name</label>
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-orange/40" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-1">Avatar URL</label>
+            <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-orange/40" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-1">Description</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-orange/40" />
+          </div>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-brand-darker">
+                <input type="checkbox" checked={exclusive} onChange={(e) => setExclusive(e.target.checked)} />
+                Exclusive
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Order</span>
+                <input
+                  type="number"
+                  value={order}
+                  onChange={(e) => setOrder(Number(e.target.value))}
+                  className="w-20 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-orange/40"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                disabled={saving}
+                className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+              >
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving}
+                className="inline-flex items-center gap-2 bg-brand-orange text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-orange/90 transition-colors disabled:opacity-60"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!confirmDelId} title="Delete Partner" onClose={() => setConfirmDelId(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">Are you sure you want to delete this partner?</div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDelId(null)}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void del(confirmDelId || '')}
+              disabled={saving}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-60"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
 
 function AdminTeamPanel() {
   const { user } = useAuth();
@@ -2652,6 +3033,7 @@ export function AdminPage() {
                   <AdminSidebarLink href="/admin/builds" label="Builds" icon={<Hammer className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/partners" label="Partners" icon={<Star className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/hero-skills" label="Hero Skills" icon={<Zap className="w-5 h-5" />} />
               </nav>
@@ -2674,6 +3056,7 @@ export function AdminPage() {
               <Route path="builds" element={<AdminBuildsPanel />} />
               <Route path="blog" element={<AdminBlogPanel />} />
               <Route path="team" element={<AdminTeamPanel />} />
+              <Route path="partners" element={<AdminPartnersPanel />} />
               <Route path="contact" element={<AdminContactPanel />} />
               <Route path="hero-skills" element={<AdminHeroSkillsPanel />} />
               <Route path="*" element={<Navigate to="/admin/users" replace />} />

@@ -85,6 +85,7 @@ type FirestoreNodeData = {
   image?: unknown;
   icon?: unknown;
   iconColor?: unknown;
+  blackHole?: unknown;
 };
 
 type BgImage = {

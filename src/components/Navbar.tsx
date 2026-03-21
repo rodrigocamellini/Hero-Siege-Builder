@@ -52,8 +52,9 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
     },
     { label: t.nav[5], href: '/blog' },
     { label: t.nav[6], href: '/forum' },
+    { label: t.nav[7], href: '/partners' },
     { label: t.teamLabel, href: '/team' },
-    { label: t.nav[7], href: '/contact' },
+    { label: t.nav[8], href: '/contact' },
   ];
 
   return (

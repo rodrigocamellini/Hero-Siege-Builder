@@ -19,6 +19,7 @@ import { EXTRA_SHIELDS } from '../data/extraShields';
 
 type BuildStatus = 'PENDING' | 'PUBLISHED' | 'REJECTED' | 'DRAFT';
 type BuildTier = 'starterGame' | 'midGame' | 'endGame';
+type Role = 'USER' | 'CONTRIBUTOR' | 'MODERATOR' | 'PARTNER' | 'DEVELOPER';
 
 type BuildStats = {
   strength: number;

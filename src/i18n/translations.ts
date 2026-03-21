@@ -2,8 +2,9 @@ export type Language = 'en' | 'pt' | 'ru';
 
 export const translations = {
   en: {
-    nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Forum', 'Contact'],
+    nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Forum', 'Partners', 'Contact'],
     teamLabel: 'Team',
+    partnersLabel: 'Partners',
     heroTitle: 'New Class Spotlight<br/><span class="text-brand-orange">The&nbsp;Prophet</span>',
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
@@ -40,7 +41,7 @@ export const translations = {
         image: 'https://picsum.photos/seed/hero-siege-ether/100/100',
       },
     ],
-    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Forum', 'Team', 'Contact'],
+    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Forum', 'Partners', 'Team', 'Contact'],
     rights: 'Hero Siege Builder {{year}} © This website is not affiliated with Panic Art Studios. All assets and data belong to their respective owners.',
     classes: {
       viking: { name: 'Viking', desc: 'Robust warrior focused on physical damage and resistance.' },
@@ -53,8 +54,9 @@ export const translations = {
     ],
   },
   pt: {
-    nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Forum', 'Contact'],
+    nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Forum', 'Parceiros', 'Contact'],
     teamLabel: 'Equipe',
+    partnersLabel: 'Parceiros',
     heroTitle: 'New Class Spotlight<br/><span class="text-brand-orange">The&nbsp;Prophet</span>',
     heroSubtitle: 'Mastering the elements and summoning ancestral spirits, the Prophet brings a new shapeshifting mechanic to the battlefield.',
     createBuild: 'Learn More',
@@ -91,7 +93,7 @@ export const translations = {
         image: 'https://picsum.photos/seed/hero-siege-ether/100/100',
       },
     ],
-    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Forum', 'Equipe', 'Contact'],
+    footerLinks: ['Home', 'Database', 'Tree', 'Blog', 'Forum', 'Parceiros', 'Equipe', 'Contact'],
     rights: 'Hero Siege Builder {{year}} © Este site não é afiliado à Panic Art Studios. Todos os recursos e dados pertencem aos seus respectivos proprietários.',
     classes: {
       viking: { name: 'Viking', desc: 'Guerreiro robusto focado em dano físico e resistência.' },
@@ -104,8 +106,9 @@ export const translations = {
     ],
   },
   ru: {
-    nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Forum', 'Contact'],
+    nav: ['Home', 'Database', 'Classes', 'Items', 'Tree', 'Blog', 'Forum', 'Партнеры', 'Contact'],
     teamLabel: 'Команда',
+    partnersLabel: 'Партнеры',
     heroTitle: 'ПЛАНИРУЙТЕ СВОЕ <span class="text-brand-orange">ВЕЛИКОЕ</span> ПУТЕШЕСТВИЕ В HERO SIEGE.',
     heroSubtitle: 'СОЗДАВАЙТЕ, ДЕЛИТЕСЬ И ДОМИНИРУЙТЕ С САМЫМ ПОЛНЫМ СТРОИТЕЛЕМ СООБЩЕСТВА.',
     createBuild: 'Создать билд',
