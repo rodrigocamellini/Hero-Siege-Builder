@@ -509,7 +509,7 @@ export function EtherTree() {
       <div className="absolute top-5 right-5 z-50 pointer-events-none">
         <div className="bg-[#000f1e]/90 border border-[#00f2ff] rounded-lg p-4 shadow-[0_0_20px_rgba(0,242,255,0.2)] backdrop-blur-sm w-80 pointer-events-auto">
           <h3 className="text-[#00f2ff] text-sm border-b border-[#00f2ff]/30 pb-2 mb-2 uppercase tracking-wider font-bold">
-            {hoveredBg ? 'Detalhes do Fundo' : 'Node Details'}
+            {hoveredBg ? 'Background Details' : 'Node Details'}
           </h3>
           {hoveredNode !== null ? (
             (() => {
@@ -630,7 +630,7 @@ export function EtherTree() {
           <div className="bg-[#050510] border-2 border-[#00f2ff] p-8 rounded-xl max-w-sm w-full text-center shadow-[0_0_50px_rgba(0,242,255,0.3)]">
             <h2 className="text-2xl font-bold text-[#00f2ff] mb-4 uppercase tracking-widest">Restart Tree?</h2>
             <p className="text-gray-300 mb-8 leading-relaxed">
-              Isso desativará todos os pontos, mantendo apenas o <span className="text-[#ffcc00] font-bold">Ether Core</span> ativo.
+              This will deactivate all nodes, keeping only the <span className="text-[#ffcc00] font-bold">Ether Core</span> active.
             </p>
             <div className="flex justify-center gap-4">
               <button
@@ -660,7 +660,7 @@ export function EtherTree() {
           <div className="bg-[#050510] border-2 border-green-500 p-8 rounded-xl max-w-sm w-full text-center shadow-[0_0_50px_rgba(34,197,94,0.3)]">
             <h2 className="text-2xl font-bold text-green-500 mb-4 uppercase tracking-widest">Activate All?</h2>
             <p className="text-gray-300 mb-8 leading-relaxed">
-              Isso ativará <span className="text-green-400 font-bold">todos os pontos</span> da árvore instantaneamente.
+              This will activate <span className="text-green-400 font-bold">all nodes</span> instantly.
             </p>
             <div className="flex justify-center gap-4">
               <button

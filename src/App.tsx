@@ -14,12 +14,14 @@ import { EtherTree } from './features/tree/EtherTree';
 import { IncarnationTree } from './features/tree/IncarnationTree';
 import { TeamPage } from './pages/TeamPage';
 import { PartnersPage } from './pages/PartnersPage';
+import { NetworkPage } from './pages/NetworkPage';
 import { BlogPage } from './pages/BlogPage';
 import { BlogPostPage } from './pages/BlogPostPage';
 import { BlogEditorPage } from './pages/BlogEditorPage';
 import { ForumPage } from './pages/ForumPage';
 import { BuildPage } from './pages/BuildPage';
 import { ContactPage } from './pages/ContactPage';
+import { AdsenseMetaManager } from './components/AdsenseMetaManager';
 import { classNames, type ClassKey } from './data/tierlist';
 import { EXTRA_SHIELDS } from './data/extraShields';
 import { Modal } from './components/Modal';
@@ -3497,7 +3499,9 @@ function QuestsDatabasePage() {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <AdsenseMetaManager />
+      <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -3748,9 +3752,11 @@ export default function App() {
           </StandardPage>
         }
       />
+      <Route path="/network" element={<NetworkPage />} />
       <Route path="/team" element={<TeamPage />} />
       <Route path="/partners" element={<PartnersPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star } from 'lucide-react';
+import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
@@ -8,6 +8,7 @@ import { AdminSidebarLink } from '../features/admin/AdminSidebarLink';
 import { AdminSettingsPanel } from '../features/admin/AdminSettingsPanel';
 import { AdminBlogPanel } from '../features/admin/AdminBlogPanel';
 import { AdminContactPanel } from '../features/admin/AdminContactPanel';
+import { AdminBannerPanel } from '../features/admin/AdminBannerPanel';
 import { AdminHeroSkillsPanel } from '../features/admin/AdminHeroSkillsPanel';
 import { UsersTable } from '../features/admin/UsersTable';
 import { useAuth } from '../features/auth/AuthProvider';
@@ -3032,6 +3033,7 @@ export function AdminPage() {
                   <AdminSidebarLink href="/admin/incarnation-tree" label="Incarnation Tree" icon={<Network className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/builds" label="Builds" icon={<Hammer className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/blog" label="Blog" icon={<FileText className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/banner" label="Banner" icon={<Image className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/partners" label="Partners" icon={<Star className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
@@ -3055,6 +3057,7 @@ export function AdminPage() {
               <Route path="incarnation-tree" element={<AdminIncarnationTreePanel />} />
               <Route path="builds" element={<AdminBuildsPanel />} />
               <Route path="blog" element={<AdminBlogPanel />} />
+              <Route path="banner" element={<AdminBannerPanel />} />
               <Route path="team" element={<AdminTeamPanel />} />
               <Route path="partners" element={<AdminPartnersPanel />} />
               <Route path="contact" element={<AdminContactPanel />} />

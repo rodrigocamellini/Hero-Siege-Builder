@@ -285,6 +285,27 @@ export function ForumPage() {
     armor: 0,
     vitality: 0,
   });
+  const changeNbStat = (key: keyof BuildStats, delta: number) => {
+    setNbStats((prev) => {
+      const current = Number(prev[key] || 0);
+      const totalSpent = totalNbStats(prev);
+
+      if (delta > 0) {
+        const remaining = Math.max(0, NB_TOTAL - totalSpent);
+        const applied = Math.min(delta, remaining);
+        if (applied <= 0) return prev;
+        return { ...prev, [key]: current + applied };
+      }
+
+      if (delta < 0) {
+        const next = Math.max(0, current + delta);
+        if (next === current) return prev;
+        return { ...prev, [key]: next };
+      }
+
+      return prev;
+    });
+  };
   const [nbRelics, setNbRelics] = useState<Array<string | null>>([null, null, null, null, null]);
   const [nbCharms, setNbCharms] = useState<string[]>([]);
   const [activeRelicSlot, setActiveRelicSlot] = useState<number | null>(null);
@@ -1365,7 +1386,9 @@ export function ForumPage() {
               <section className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="font-heading font-bold uppercase tracking-widest text-brand-darker">Attributes</div>
-                  <div className="text-[10px] font-bold text-brand-darker/40 uppercase">Total: {NB_TOTAL} · Remaining: {NB_TOTAL - totalNbStats(nbStats)}</div>
+                  <div className="text-[10px] font-bold text-brand-darker/40 uppercase">
+                    Total: {NB_TOTAL} · Remaining: {Math.max(0, NB_TOTAL - totalNbStats(nbStats))}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {(
@@ -1386,10 +1409,38 @@ export function ForumPage() {
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-sm font-black" style={{ color: it.color }}>{nbStats[it.key]}</span>
                         <div className="flex gap-0.5">
-                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.max(0, s[it.key] - 10) }))} className="w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">-10</button>
-                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.max(0, s[it.key] - 1) }))} className="w-5 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">-1</button>
-                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.min(NB_TOTAL, s[it.key] + 1) }))} className="w-5 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">+1</button>
-                          <button onClick={() => setNbStats(s => ({ ...s, [it.key]: Math.min(NB_TOTAL, s[it.key] + 10) }))} className="w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors">+10</button>
+                          <button
+                            type="button"
+                            onClick={() => changeNbStat(it.key, -10)}
+                            disabled={nbStats[it.key] <= 0}
+                            className="w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors disabled:opacity-40 disabled:hover:bg-white/60"
+                          >
+                            -10
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => changeNbStat(it.key, -1)}
+                            disabled={nbStats[it.key] <= 0}
+                            className="w-5 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors disabled:opacity-40 disabled:hover:bg-white/60"
+                          >
+                            -1
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => changeNbStat(it.key, 1)}
+                            disabled={totalNbStats(nbStats) >= NB_TOTAL}
+                            className="w-5 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors disabled:opacity-40 disabled:hover:bg-white/60"
+                          >
+                            +1
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => changeNbStat(it.key, 10)}
+                            disabled={totalNbStats(nbStats) >= NB_TOTAL}
+                            className="w-6 h-6 rounded-lg bg-white/60 flex items-center justify-center text-[8px] font-bold hover:bg-white transition-colors disabled:opacity-40 disabled:hover:bg-white/60"
+                          >
+                            +10
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1988,4 +2039,3 @@ export function ForumPage() {
     </StandardPage>
   );
 }
-

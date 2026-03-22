@@ -46,6 +46,18 @@ export function AdminSettingsPanel() {
   const [mediaSaving, setMediaSaving] = useState(false);
   const [mediaSavedOk, setMediaSavedOk] = useState(false);
 
+  const [socialLinks, setSocialLinks] = useState({ twitch: '', instagram: '', youtube: '' });
+  const [socialSaving, setSocialSaving] = useState(false);
+  const [socialSavedOk, setSocialSavedOk] = useState(false);
+
+  const [brandLogos, setBrandLogos] = useState({ headerLogoUrl: '', footerLogoUrl: '', headerLogoHeightPx: 48, footerLogoHeightPx: 48 });
+  const [brandSaving, setBrandSaving] = useState(false);
+  const [brandSavedOk, setBrandSavedOk] = useState(false);
+
+  const [adsenseSettings, setAdsenseSettings] = useState({ enabled: false, account: '' });
+  const [adsenseSaving, setAdsenseSaving] = useState(false);
+  const [adsenseSavedOk, setAdsenseSavedOk] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       setError(null);
@@ -88,6 +100,40 @@ export function AdminSettingsPanel() {
         const mediaSnap = await getDoc(doc(firestore, 'appSettings', 'media'));
         if (mediaSnap.exists()) {
           setMediaSettings(mediaSnap.data() as any);
+        }
+
+        const socialsSnap = await getDoc(doc(firestore, 'appSettings', 'socials'));
+        if (socialsSnap.exists()) {
+          const d = socialsSnap.data() as any;
+          setSocialLinks({
+            twitch: typeof d?.twitch === 'string' ? d.twitch : '',
+            instagram: typeof d?.instagram === 'string' ? d.instagram : '',
+            youtube: typeof d?.youtube === 'string' ? d.youtube : '',
+          });
+        }
+
+        const brandingSnap = await getDoc(doc(firestore, 'appSettings', 'branding'));
+        if (brandingSnap.exists()) {
+          const d = brandingSnap.data() as any;
+          const headerLogoHeightPx = Number(d?.headerLogoHeightPx);
+          const footerLogoHeightPx = Number(d?.footerLogoHeightPx);
+          setBrandLogos({
+            headerLogoUrl: typeof d?.headerLogoUrl === 'string' ? d.headerLogoUrl : '',
+            footerLogoUrl: typeof d?.footerLogoUrl === 'string' ? d.footerLogoUrl : '',
+            headerLogoHeightPx:
+              Number.isFinite(headerLogoHeightPx) && headerLogoHeightPx >= 16 && headerLogoHeightPx <= 256 ? headerLogoHeightPx : 48,
+            footerLogoHeightPx:
+              Number.isFinite(footerLogoHeightPx) && footerLogoHeightPx >= 16 && footerLogoHeightPx <= 256 ? footerLogoHeightPx : 48,
+          });
+        }
+
+        const adsenseSnap = await getDoc(doc(firestore, 'appSettings', 'adsense'));
+        if (adsenseSnap.exists()) {
+          const d = adsenseSnap.data() as any;
+          setAdsenseSettings({
+            enabled: d?.enabled === true,
+            account: typeof d?.account === 'string' ? d.account : '',
+          });
         }
       } catch (err) {
         setError(firestoreErrorMessage(err));
@@ -194,6 +240,107 @@ export function AdminSettingsPanel() {
       setError(firestoreErrorMessage(err));
     } finally {
       setMediaSaving(false);
+    }
+  }
+
+  async function saveSocialLinks() {
+    setError(null);
+    setSocialSavedOk(false);
+    setSocialSaving(true);
+    try {
+      await setDoc(
+        doc(firestore, 'appSettings', 'socials'),
+        {
+          twitch: socialLinks.twitch.trim(),
+          instagram: socialLinks.instagram.trim(),
+          youtube: socialLinks.youtube.trim(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      setSocialSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setSocialSaving(false);
+    }
+  }
+
+  async function saveBrandLogos() {
+    setError(null);
+    setBrandSavedOk(false);
+    setBrandSaving(true);
+    try {
+      const normalizeLogoUrl = (raw: string) => {
+        const v = raw.trim();
+        if (!v) return '';
+        if (v.startsWith('http://') || v.startsWith('https://')) return v;
+        if (v.startsWith('public/')) return `/${v.substring('public/'.length)}`;
+        if (v.startsWith('/')) return v;
+        if (v.startsWith('images/')) return `/${v}`;
+        if (!v.includes('/') && /\.[a-z0-9]+$/i.test(v)) return `/images/${v}`;
+        return `/${v}`;
+      };
+
+      const headerLogoUrl = normalizeLogoUrl(brandLogos.headerLogoUrl);
+      const footerLogoUrl = normalizeLogoUrl(brandLogos.footerLogoUrl);
+      const headerLogoHeightPx = Number.isFinite(brandLogos.headerLogoHeightPx) ? brandLogos.headerLogoHeightPx : 48;
+      const footerLogoHeightPx = Number.isFinite(brandLogos.footerLogoHeightPx) ? brandLogos.footerLogoHeightPx : 48;
+      await setDoc(
+        doc(firestore, 'appSettings', 'branding'),
+        {
+          headerLogoUrl,
+          footerLogoUrl,
+          headerLogoHeightPx,
+          footerLogoHeightPx,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      try {
+        window.localStorage.setItem('hsb_branding_headerLogoUrl', headerLogoUrl || '/images/logo.webp');
+        window.localStorage.setItem('hsb_branding_footerLogoUrl', footerLogoUrl || '/images/logo.webp');
+        window.localStorage.setItem('hsb_branding_headerLogoHeightPx', String(headerLogoHeightPx));
+        window.localStorage.setItem('hsb_branding_footerLogoHeightPx', String(footerLogoHeightPx));
+      } catch {
+      }
+      setBrandSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setBrandSaving(false);
+    }
+  }
+
+  async function saveAdsense() {
+    setError(null);
+    setAdsenseSavedOk(false);
+    setAdsenseSaving(true);
+    try {
+      const raw = adsenseSettings.account.trim();
+      const match = raw.match(/content\s*=\s*["']([^"']+)["']/i);
+      const account = (match?.[1] ?? raw)
+        .replace(/<[^>]+>/g, '')
+        .replaceAll('"', '')
+        .replaceAll("'", '')
+        .trim();
+
+      if (adsenseSettings.enabled && !account) {
+        setError('Informe o account do Adsense (ex: ca-pub-...).');
+        return;
+      }
+
+      await setDoc(
+        doc(firestore, 'appSettings', 'adsense'),
+        { enabled: adsenseSettings.enabled, account, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setAdsenseSettings((prev) => ({ ...prev, account }));
+      setAdsenseSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setAdsenseSaving(false);
     }
   }
 
@@ -570,6 +717,203 @@ export function AdminSettingsPanel() {
           </div>
 
           {mediaSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Mídias oficiais atualizadas.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Redes Sociais</div>
+              <div className="text-sm font-bold text-brand-darker">Configurar links do rodapé</div>
+              <div className="text-xs text-brand-darker/60">Define os links dos ícones de Twitch, Instagram e YouTube.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveSocialLinks()}
+              disabled={loading || socialSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {socialSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Twitch</label>
+              <input
+                type="text"
+                value={socialLinks.twitch}
+                onChange={(e) => {
+                  setSocialSavedOk(false);
+                  setSocialLinks((prev) => ({ ...prev, twitch: e.target.value }));
+                }}
+                placeholder="https://twitch.tv/seucanal"
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Instagram</label>
+              <input
+                type="text"
+                value={socialLinks.instagram}
+                onChange={(e) => {
+                  setSocialSavedOk(false);
+                  setSocialLinks((prev) => ({ ...prev, instagram: e.target.value }));
+                }}
+                placeholder="https://instagram.com/seuperfil"
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">YouTube</label>
+              <input
+                type="text"
+                value={socialLinks.youtube}
+                onChange={(e) => {
+                  setSocialSavedOk(false);
+                  setSocialLinks((prev) => ({ ...prev, youtube: e.target.value }));
+                }}
+                placeholder="https://youtube.com/@seucanal"
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+          </div>
+
+          {socialSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Links do rodapé atualizados.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Branding</div>
+              <div className="text-sm font-bold text-brand-darker">Logo do Header e do Rodapé</div>
+              <div className="text-xs text-brand-darker/60">Define imagens diferentes para o topo e para o rodapé.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveBrandLogos()}
+              disabled={loading || brandSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {brandSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Logo Header (URL)</label>
+              <input
+                type="text"
+                value={brandLogos.headerLogoUrl}
+                onChange={(e) => {
+                  setBrandSavedOk(false);
+                  setBrandLogos((prev) => ({ ...prev, headerLogoUrl: e.target.value }));
+                }}
+                placeholder="/images/logo.webp ou https://..."
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Logo Rodapé (URL)</label>
+              <input
+                type="text"
+                value={brandLogos.footerLogoUrl}
+                onChange={(e) => {
+                  setBrandSavedOk(false);
+                  setBrandLogos((prev) => ({ ...prev, footerLogoUrl: e.target.value }));
+                }}
+                placeholder="/images/logo.webp ou https://..."
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Altura do Logo Header (px)</label>
+              <input
+                type="number"
+                min={16}
+                max={256}
+                value={brandLogos.headerLogoHeightPx}
+                onChange={(e) => {
+                  setBrandSavedOk(false);
+                  setBrandLogos((prev) => ({ ...prev, headerLogoHeightPx: Number(e.target.value) }));
+                }}
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+            <div className="space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Altura do Logo Rodapé (px)</label>
+              <input
+                type="number"
+                min={16}
+                max={256}
+                value={brandLogos.footerLogoHeightPx}
+                onChange={(e) => {
+                  setBrandSavedOk(false);
+                  setBrandLogos((prev) => ({ ...prev, footerLogoHeightPx: Number(e.target.value) }));
+                }}
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </div>
+          </div>
+
+          {brandSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Logos atualizados.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Adsense</div>
+              <div className="text-sm font-bold text-brand-darker">Google Adsense</div>
+              <div className="text-xs text-brand-darker/60">Injeta a meta google-adsense-account no head quando ativo.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveAdsense()}
+              disabled={loading || adsenseSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {adsenseSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <label className="md:col-span-2 space-y-1.5 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+              <div className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Account (ca-pub-...)</div>
+              <input
+                type="text"
+                value={adsenseSettings.account}
+                onChange={(e) => {
+                  setAdsenseSavedOk(false);
+                  setAdsenseSettings((prev) => ({ ...prev, account: e.target.value }));
+                }}
+                placeholder='<meta name="google-adsense-account" content="ca-pub-...">'
+                className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 bg-white border border-brand-dark/5 px-4 py-4 rounded-2xl text-xs font-bold uppercase tracking-widest text-brand-darker/70 select-none">
+              <input
+                type="checkbox"
+                className="accent-brand-orange"
+                checked={adsenseSettings.enabled}
+                onChange={(e) => {
+                  setAdsenseSavedOk(false);
+                  setAdsenseSettings((prev) => ({ ...prev, enabled: e.target.checked }));
+                }}
+              />
+              Ativo
+            </label>
+          </div>
+
+          {adsenseSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Adsense atualizado.</div> : null}
         </div>
       </div>
 

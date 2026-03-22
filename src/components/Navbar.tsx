@@ -1,15 +1,73 @@
-import { useState } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Menu, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Language, Translation } from '../i18n/translations';
 import { UserMenu } from '../features/auth/UserMenu';
+import { firestore } from '../firebase';
+
+function normalizeLogoUrl(raw: string) {
+  const v = raw.trim();
+  if (!v) return '';
+  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+  if (v.startsWith('public/')) return `/${v.substring('public/'.length)}`;
+  if (v.startsWith('/')) return v;
+  if (v.startsWith('images/')) return `/${v}`;
+  if (!v.includes('/') && /\.[a-z0-9]+$/i.test(v)) return `/images/${v}`;
+  return `/${v}`;
+}
 
 export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Language) => void; t: Translation }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileDatabaseOpen, setIsMobileDatabaseOpen] = useState(false);
   const [isMobileTreeOpen, setIsMobileTreeOpen] = useState(false);
+  const [isMobileNetworkOpen, setIsMobileNetworkOpen] = useState(false);
   const location = useLocation();
+  const [logoUrl, setLogoUrl] = useState(() => {
+    try {
+      const v = window.localStorage.getItem('hsb_branding_headerLogoUrl') ?? '';
+      return normalizeLogoUrl(v) || '/images/logo.webp';
+    } catch {
+      return '/images/logo.webp';
+    }
+  });
+  const [logoHeightPx, setLogoHeightPx] = useState(() => {
+    try {
+      const n = Number(window.localStorage.getItem('hsb_branding_headerLogoHeightPx'));
+      return Number.isFinite(n) && n >= 16 && n <= 256 ? n : 48;
+    } catch {
+      return 48;
+    }
+  });
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(firestore, 'appSettings', 'branding'), (snap) => {
+      if (!snap.exists()) {
+        setLogoUrl('/images/logo.webp');
+        setLogoHeightPx(48);
+        try {
+          window.localStorage.setItem('hsb_branding_headerLogoUrl', '/images/logo.webp');
+          window.localStorage.setItem('hsb_branding_headerLogoHeightPx', '48');
+        } catch {
+        }
+        return;
+      }
+      const d = snap.data() as any;
+      const next = typeof d?.headerLogoUrl === 'string' ? d.headerLogoUrl.trim() : '';
+      const nextUrl = next || '/images/logo.webp';
+      setLogoUrl(normalizeLogoUrl(nextUrl) || '/images/logo.webp');
+      const n = Number(d?.headerLogoHeightPx);
+      const nextHeight = Number.isFinite(n) && n >= 16 && n <= 256 ? n : 48;
+      setLogoHeightPx(nextHeight);
+      try {
+        window.localStorage.setItem('hsb_branding_headerLogoUrl', normalizeLogoUrl(nextUrl) || '/images/logo.webp');
+        window.localStorage.setItem('hsb_branding_headerLogoHeightPx', String(nextHeight));
+      } catch {
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const isPathActive = (href: string) => {
     if (href === '#') return false;
@@ -52,8 +110,14 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
     },
     { label: t.nav[5], href: '/blog' },
     { label: t.nav[6], href: '/forum' },
-    { label: t.nav[7], href: '/partners' },
-    { label: t.teamLabel, href: '/team' },
+    {
+      label: t.networkLabel,
+      href: '#',
+      children: [
+        { label: t.partnersLabel, href: '/partners' },
+        { label: t.teamLabel, href: '/team' },
+      ],
+    },
     { label: t.nav[8], href: '/contact' },
   ];
 
@@ -61,7 +125,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
     <nav className="bg-white border-b border-brand-dark/10 px-4 py-3 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <Link to="/" className="flex items-center group cursor-pointer">
-          <img src="/images/logo.webp" alt="Hero Siege Builder" className="h-10 md:h-12 w-auto object-contain" />
+          <img src={logoUrl} alt="Hero Siege Builder" className="w-auto object-contain" style={{ height: `${logoHeightPx}px` }} />
         </Link>
 
         <div className="hidden lg:flex items-center gap-8">
@@ -144,6 +208,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
               if (!isMenuOpen) {
                 setIsMobileDatabaseOpen(false);
                 setIsMobileTreeOpen(false);
+                setIsMobileNetworkOpen(false);
               }
               setIsMenuOpen(!isMenuOpen);
             }}
@@ -226,16 +291,54 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                 ) : null}
               </div>
 
-              {navItems.slice(3).map((item) => (
-                <Link
-                  key={item.label}
-                  to={item.href}
-                  className={`font-heading font-bold text-lg uppercase tracking-wider transition-colors ${isPathActive(item.href) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
-                  onClick={() => setIsMenuOpen(false)}
+              <Link
+                to={navItems[3].href}
+                className={`font-heading font-bold text-lg uppercase tracking-wider transition-colors ${isPathActive(navItems[3].href) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {navItems[3].label}
+              </Link>
+
+              <Link
+                to={navItems[4].href}
+                className={`font-heading font-bold text-lg uppercase tracking-wider transition-colors ${isPathActive(navItems[4].href) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {navItems[4].label}
+              </Link>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileNetworkOpen((v) => !v)}
+                  className={`w-full font-heading font-bold text-lg uppercase tracking-wider transition-colors flex items-center justify-between ${isChildActive(navItems[5].children) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
                 >
-                  {item.label}
-                </Link>
-              ))}
+                  <span>{navItems[5].label}</span>
+                  <ChevronDown className={`w-5 h-5 transition-transform ${isMobileNetworkOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isMobileNetworkOpen ? (
+                  <div className="pl-4 flex flex-col gap-2">
+                    {navItems[5].children?.map((child) => (
+                      <Link
+                        key={child.label}
+                        to={child.href}
+                        className={`font-heading font-bold text-sm uppercase tracking-wider transition-colors ${isPathActive(child.href) ? 'text-brand-orange' : 'text-brand-darker/80 hover:text-brand-orange'}`}
+                        onClick={() => setIsMenuOpen(false)}
+                      >
+                        {child.label}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <Link
+                to={navItems[6].href}
+                className={`font-heading font-bold text-lg uppercase tracking-wider transition-colors ${isPathActive(navItems[6].href) ? 'text-brand-orange' : 'text-brand-darker hover:text-brand-orange'}`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {navItems[6].label}
+              </Link>
 
               <div className="pt-4 border-t border-brand-dark/5 flex flex-col space-y-4">
                 <div className="relative">
