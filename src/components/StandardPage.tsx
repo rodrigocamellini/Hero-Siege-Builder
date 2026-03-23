@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Footer } from './Footer';
 import { Navbar } from './Navbar';
@@ -26,6 +26,7 @@ export function StandardPage({ children, title, description, canonicalPath, noin
   const t = useMemo(() => translations[lang], [lang]);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const location = useLocation();
+  const navbarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const siteUrl = String(import.meta.env.VITE_SITE_URL || 'https://www.herosiegebuilder.com').replace(/\/+$/, '');
@@ -90,9 +91,32 @@ export function StandardPage({ children, title, description, canonicalPath, noin
     });
   }, [canonicalPath, description, location.pathname, noindex, structuredData, title]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const el = navbarRef.current;
+    if (!el) return;
+
+    const apply = () => {
+      const h = Math.max(0, Math.round(el.getBoundingClientRect().height));
+      document.documentElement.style.setProperty('--hsb-navbar-height', `${h}px`);
+    };
+
+    apply();
+
+    const ro = new ResizeObserver(() => apply());
+    ro.observe(el);
+    window.addEventListener('resize', apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', apply);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar lang={lang} setLang={setLang} t={t} />
+      <div ref={navbarRef}>
+        <Navbar lang={lang} setLang={setLang} t={t} />
+      </div>
       <main className="flex-grow">{children}</main>
       <Footer t={t} currentYear={currentYear} />
     </div>

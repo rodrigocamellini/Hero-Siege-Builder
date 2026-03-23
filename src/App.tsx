@@ -3727,7 +3727,7 @@ export default function App() {
               { name: 'Ether', path: '/tree/ether' },
             ])}
           >
-            <div className="fixed inset-x-0 bottom-0 top-[64px] z-40">
+            <div className="fixed inset-x-0 bottom-0 z-40" style={{ top: 'var(--hsb-navbar-height, 64px)' }}>
               <EtherTree />
             </div>
           </StandardPage>
@@ -3746,7 +3746,7 @@ export default function App() {
               { name: 'Incarnation', path: '/tree/incarnation' },
             ])}
           >
-            <div className="fixed inset-x-0 bottom-0 top-[64px] z-40">
+            <div className="fixed inset-x-0 bottom-0 z-40" style={{ top: 'var(--hsb-navbar-height, 64px)' }}>
               <IncarnationTree />
             </div>
           </StandardPage>
