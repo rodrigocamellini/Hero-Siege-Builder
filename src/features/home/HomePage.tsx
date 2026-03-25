@@ -183,12 +183,29 @@ export function HomePage() {
           return bp - ap;
         });
 
-        const featured = rows.filter((r) => r.featured).slice(0, 4).map(({ featured: _f, ...r }) => r satisfies HomeBuildRow);
-        if (featured.length > 0) {
-          setFeaturedBuilds(featured);
-          return;
+        const picked: HomeBuildRow[] = [];
+        const seen = new Set<string>();
+
+        for (const r of rows) {
+          if (!r.featured) continue;
+          if (seen.has(r.id)) continue;
+          const { featured: _f, ...clean } = r;
+          picked.push(clean satisfies HomeBuildRow);
+          seen.add(r.id);
+          if (picked.length >= 3) break;
         }
-        setFeaturedBuilds(rows.slice(0, 4).map(({ featured: _f, ...r }) => r satisfies HomeBuildRow));
+
+        if (picked.length < 3) {
+          for (const r of rows) {
+            if (seen.has(r.id)) continue;
+            const { featured: _f, ...clean } = r;
+            picked.push(clean satisfies HomeBuildRow);
+            seen.add(r.id);
+            if (picked.length >= 3) break;
+          }
+        }
+
+        setFeaturedBuilds(picked);
       } catch {
         setFeaturedBuilds([]);
       } finally {
@@ -267,7 +284,7 @@ export function HomePage() {
               </div>
               <div className="space-y-4">
                 {!featuredBuildsLoading && featuredBuilds.length > 0
-                  ? featuredBuilds.map((b) => (
+                  ? featuredBuilds.slice(0, 3).map((b) => (
                       <BuildItem
                         key={b.id}
                         title={b.title}

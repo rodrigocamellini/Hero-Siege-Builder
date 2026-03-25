@@ -10,6 +10,7 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   where,
   getDoc,
@@ -256,6 +257,9 @@ export function ForumPage() {
   const [builds, setBuilds] = useState<BuildRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [ratingBusyByBuild, setRatingBusyByBuild] = useState<Record<string, boolean>>({});
+  const [myRatingsByBuild, setMyRatingsByBuild] = useState<Record<string, number>>({});
+  const [ratingError, setRatingError] = useState<string | null>(null);
 
   // Counts state
   const [countsLoading, setCountsLoading] = useState(true);
@@ -1117,6 +1121,39 @@ export function ForumPage() {
     });
   };
 
+  const rateBuild = async (buildId: string, value: number) => {
+    if (!user?.uid) {
+      setRatingError('Sign in to rate builds.');
+      return;
+    }
+    if (value < 1 || value > 5) return;
+    if (ratingBusyByBuild[buildId]) return;
+    setRatingBusyByBuild((prev) => ({ ...prev, [buildId]: true }));
+    setRatingError(null);
+    try {
+      const result = await runTransaction(firestore, async (tx) => {
+        const buildRef = doc(firestore, 'builds', buildId);
+        const ratingRef = doc(firestore, 'builds', buildId, 'ratings', user.uid);
+        const [buildSnap, ratingSnap] = await Promise.all([tx.get(buildRef), tx.get(ratingRef)]);
+        if (!buildSnap.exists()) throw new Error('Build not found.');
+        const b = buildSnap.data() as any;
+        const prevValue = ratingSnap.exists() ? safeNumber((ratingSnap.data() as any)?.value) : 0;
+        const nextSum = Math.max(0, safeNumber(b?.ratingSum) - prevValue + value);
+        const nextCount = Math.max(0, safeNumber(b?.ratingCount) + (prevValue ? 0 : 1));
+        const nextAvg = nextCount > 0 ? nextSum / nextCount : 0;
+        tx.set(ratingRef, { value, updatedAt: serverTimestamp() }, { merge: true });
+        tx.set(buildRef, { ratingSum: nextSum, ratingCount: nextCount, ratingAvg: nextAvg, updatedAt: serverTimestamp() }, { merge: true });
+        return { nextAvg, nextCount };
+      });
+      setMyRatingsByBuild((prev) => ({ ...prev, [buildId]: value }));
+      setBuilds((prev) => prev.map((b) => (b.id === buildId ? { ...b, ratingAvg: result.nextAvg, ratingCount: result.nextCount } : b)));
+    } catch (e: any) {
+      setRatingError(e?.message || 'Failed to rate build.');
+    } finally {
+      setRatingBusyByBuild((prev) => ({ ...prev, [buildId]: false }));
+    }
+  };
+
   const canSubmit = useMemo(() => {
     if (!profile) return false;
     const role = profile.role as Role;
@@ -1163,6 +1200,7 @@ export function ForumPage() {
           )}
 
           <section className="bg-white border border-brand-dark/10 rounded-2xl p-5">
+            {ratingError ? <div className="mb-4 bg-red-50 border border-red-200 text-red-900 rounded-2xl p-4 text-sm">{ratingError}</div> : null}
             <div className="flex items-center gap-2 mb-6">
               <button
                 onClick={() => handleTabChange('LATEST')}
@@ -1229,10 +1267,26 @@ export function ForumPage() {
               ) : (
                 builds.map((b) => {
                   const ratingRounded = Math.round(b.ratingAvg);
+                  const myRating = myRatingsByBuild[b.id] || 0;
+                  const ratingBusy = !!ratingBusyByBuild[b.id];
+                  const effectiveRounded = myRating > 0 ? myRating : ratingRounded;
+                  const canRate = !!user && b.status === 'PUBLISHED';
                   return (
-                    <Link
+                    <div
                       key={b.id}
-                      to={`/build/${b.slug || b.id}`}
+                      role="link"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        const el = e.target as HTMLElement | null;
+                        if (el && el.closest('button,a')) return;
+                        navigate(`/build/${b.slug || b.id}`);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          navigate(`/build/${b.slug || b.id}`);
+                        }
+                      }}
                       className="block p-4 rounded-2xl border border-brand-dark/10 bg-brand-bg/40 hover:bg-brand-orange/5 hover:border-brand-orange/30 transition-colors"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1242,7 +1296,7 @@ export function ForumPage() {
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-heading font-black uppercase italic tracking-tight text-brand-darker truncate">{b.title}</span>
+                              <span className="font-heading font-black uppercase italic tracking-tight text-brand-darker truncate pr-1">{b.title}</span>
                               {b.featured && (
                                 <span className="px-2 py-0.5 rounded-full bg-brand-orange text-[9px] font-bold text-white uppercase tracking-widest">Featured</span>
                               )}
@@ -1267,13 +1321,31 @@ export function ForumPage() {
                           </span>
                           <div className="flex items-center gap-2">
                             <div className="flex items-center">
-                              {[...Array(5)].map((_, i) => (
-                                <Star key={i} className={`w-3.5 h-3.5 ${i < ratingRounded ? 'text-brand-orange fill-current' : 'text-brand-dark/10'}`} />
-                              ))}
+                              {[1, 2, 3, 4, 5].map((v) =>
+                                canRate ? (
+                                  <button
+                                    key={v}
+                                    type="button"
+                                    disabled={ratingBusy}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      void rateBuild(b.id, v);
+                                    }}
+                                    className="p-0.5 rounded hover:bg-brand-orange/10 transition-colors disabled:opacity-60"
+                                    title="Rate this build"
+                                  >
+                                    <Star className={`w-3.5 h-3.5 ${v <= effectiveRounded ? 'text-brand-orange fill-current' : 'text-brand-dark/10'}`} />
+                                  </button>
+                                ) : (
+                                  <Star key={v} className={`w-3.5 h-3.5 ${v <= ratingRounded ? 'text-brand-orange fill-current' : 'text-brand-dark/10'}`} />
+                                ),
+                              )}
                             </div>
                             <span className="text-[11px] font-bold text-brand-darker/40">{b.ratingCount}</span>
                             {(isAdmin || user?.uid === b.authorUid) && (
                               <button
+                                type="button"
                                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); void openEditBuild(b.id); }}
                                 className="w-8 h-8 rounded-lg bg-white border border-brand-dark/10 flex items-center justify-center text-brand-darker hover:text-brand-orange transition-colors"
                               >
@@ -1283,7 +1355,7 @@ export function ForumPage() {
                           </div>
                         </div>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })
               )}

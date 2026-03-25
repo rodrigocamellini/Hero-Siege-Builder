@@ -175,6 +175,8 @@ export function IncarnationTree() {
   const [nodeData, setNodeData] = useState<Record<string, FirestoreNodeData>>({});
   const [bgImages, setBgImages] = useState<BgImage[]>([]);
   const [hoveredNode, setHoveredNode] = useState<number | null>(null);
+  const [previewPath, setPreviewPath] = useState<Set<number> | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<number | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showActivateAllModal, setShowActivateAllModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -208,6 +210,105 @@ export function IncarnationTree() {
     return map;
   }, []);
 
+  const startNodeIndices = useMemo(() => {
+    const out: number[] = [];
+    for (let i = 0; i < rawData.length; i++) {
+      if (isStartNodeIndex(i)) out.push(i);
+    }
+    return out;
+  }, []);
+
+  const shortestPathFromSource = useCallback(
+    (source: number, target: number) => {
+      const total = rawData.length;
+      if (target < 0 || target >= total) return null;
+      if (source < 0 || source >= total) return null;
+
+      const prev = new Int32Array(total);
+      prev.fill(-1);
+
+      const queue: number[] = [source];
+      prev[source] = source;
+
+      let qi = 0;
+      while (qi < queue.length) {
+        const cur = queue[qi++]!;
+        if (cur === target) break;
+        const neigh = adjacencyList[cur] ?? [];
+        for (const n of neigh) {
+          if (prev[n] !== -1) continue;
+          prev[n] = cur;
+          queue.push(n);
+        }
+      }
+
+      if (prev[target] === -1) return null;
+
+      const path: number[] = [];
+      let cur = target;
+      for (let guard = 0; guard < total + 1; guard++) {
+        path.push(cur);
+        const p = prev[cur];
+        if (p === cur) break;
+        if (p === -1) return null;
+        cur = p;
+      }
+      path.reverse();
+      return path;
+    },
+    [adjacencyList],
+  );
+
+  const bestPathToTarget = useCallback(
+    (target: number) => {
+      const total = rawData.length;
+      if (target < 0 || target >= total) return null;
+
+      if (isStartNodeIndex(target)) return [target];
+
+      const candidateSet = new Set<number>();
+      for (const s of startNodeIndices) candidateSet.add(s);
+      for (const a of activeNodes) candidateSet.add(a);
+
+      let bestPath: number[] | null = null;
+      let bestLen = Number.POSITIVE_INFINITY;
+      let bestIsStart = false;
+      let bestIsActive = false;
+
+      for (const src of candidateSet) {
+        const path = shortestPathFromSource(src, target);
+        if (!path) continue;
+        const len = path.length;
+        const isStart = isStartNodeIndex(src);
+        const isActive = activeNodes.has(src);
+
+        if (len < bestLen) {
+          bestPath = path;
+          bestLen = len;
+          bestIsStart = isStart;
+          bestIsActive = isActive;
+          continue;
+        }
+
+        if (len === bestLen) {
+          if (isStart && !bestIsStart) {
+            bestPath = path;
+            bestIsStart = isStart;
+            bestIsActive = isActive;
+            continue;
+          }
+          if (isStart === bestIsStart && isActive && !bestIsActive) {
+            bestPath = path;
+            bestIsActive = isActive;
+          }
+        }
+      }
+
+      return bestPath;
+    },
+    [activeNodes, startNodeIndices, shortestPathFromSource],
+  );
+
   const checkFullConnectivity = useCallback(
     (nodeSet: Set<number>) => {
       if (nodeSet.size === 0) return true;
@@ -222,9 +323,7 @@ export function IncarnationTree() {
       // (A menos que as regras permitam, mas para conectividade precisamos de uma origem)
       if (activeStartNodes.length === 0 && activeBlackHoles.length === 0) return false;
 
-      // Se houver qualquer Black Hole ativo, TODOS os Black Holes ativos agem como raízes (roots)
-      // para a busca em largura (BFS). Se não, apenas os start nodes originais.
-      const roots = activeBlackHoles.length > 0 ? activeBlackHoles : activeStartNodes;
+      const roots = Array.from(new Set<number>([...activeStartNodes, ...activeBlackHoles]));
 
       const visited = new Set<number>(roots);
       const queue: number[] = [...roots];
@@ -378,40 +477,40 @@ export function IncarnationTree() {
     (id: number) => {
       const dbData = nodeData[String(id + 1)] ?? {};
       const isBlackHole = !!dbData.blackHole;
-      const anyBlackHoleActive = Array.from(activeNodes).some((idx) => !!nodeData[String(idx + 1)]?.blackHole);
 
       const newSet = new Set(activeNodes);
       const isActive = newSet.has(id);
 
       if (!isActive) {
-        if (!infinitePoints) {
-          const currentPoints = activeNodes.size;
-          if (currentPoints >= maxPoints) return;
+        const path = bestPathToTarget(id);
+        if (!path || path.length === 0) return;
+
+        let remaining = infinitePoints ? Number.POSITIVE_INFINITY : Math.max(0, maxPoints - newSet.size);
+        for (const n of path) {
+          if (newSet.has(n)) continue;
+          if (remaining <= 0) break;
+          newSet.add(n);
+          remaining -= 1;
         }
+
+        if (!newSet.has(id)) return;
 
         const neighbors = adjacencyList[id] ?? [];
-        const hasActiveNeighbor = neighbors.some((n) => activeNodes.has(n));
-
-        // Se for o primeiro nó da árvore
-        if (activeNodes.size === 0) {
-          if (!isStartNodeIndex(id)) return;
-          newSet.add(id);
-          setActiveNodes(newSet);
-          return;
-        }
+        const hasActiveNeighbor = neighbors.some((n) => newSet.has(n));
 
         // Se for um Black Hole e for ativado, ativa TODOS os outros Black Holes da árvore
         if (isBlackHole) {
+          if (!hasActiveNeighbor && !isStartNodeIndex(id)) return;
           // Procura todos os Black Holes disponíveis no banco de dados
           const allBlackHoles = Object.keys(nodeData)
             .filter((nodeId) => !!nodeData[nodeId]?.blackHole)
             .map((nodeId) => Number(nodeId) - 1);
 
           // Calcula quantos Black Holes novos serão adicionados que já não estão ativos
-          const newBlackHolesToAdd = allBlackHoles.filter((bhIdx) => !activeNodes.has(bhIdx));
+          const newBlackHolesToAdd = allBlackHoles.filter((bhIdx) => !newSet.has(bhIdx));
 
           if (!infinitePoints) {
-            const currentPoints = activeNodes.size;
+            const currentPoints = newSet.size;
             if (currentPoints + newBlackHolesToAdd.length > maxPoints) return;
           }
 
@@ -422,11 +521,7 @@ export function IncarnationTree() {
           return;
         }
 
-        // Caso padrão: ativar se tiver vizinho ativo
-        if (hasActiveNeighbor) {
-          newSet.add(id);
-          setActiveNodes(newSet);
-        }
+        setActiveNodes(newSet);
         return;
       }
 
@@ -457,7 +552,7 @@ export function IncarnationTree() {
         setActiveNodes(newSet);
       }
     },
-    [activeNodes, adjacencyList, checkFullConnectivity, infinitePoints, maxPoints, nodeData],
+    [activeNodes, adjacencyList, bestPathToTarget, checkFullConnectivity, infinitePoints, maxPoints, nodeData],
   );
 
   const handleGenerateLink = () => {
@@ -553,6 +648,12 @@ export function IncarnationTree() {
     if (q.length < 2) return null;
 
     const set = new Set<number>();
+
+    // 1) Match by node ID(s) present in the query (e.g., "85", "node 85", "#271")
+    const idMatches = Array.from(q.matchAll(/\d+/g)).map((m) => Number(m[0])).filter((n) => Number.isFinite(n) && n >= 1 && n <= rawData.length);
+    for (const id of idMatches) set.add(id - 1);
+
+    // 2) Match by name/description substring
     for (let idx = 0; idx < rawData.length; idx++) {
       const dbData = nodeData[String(idx + 1)] ?? {};
       const name = (typeof dbData.name === 'string' ? dbData.name : '') ?? '';
@@ -571,6 +672,7 @@ export function IncarnationTree() {
       const active1 = activeNodes.has(conn.from);
       const active2 = activeNodes.has(conn.to);
       const isActive = active1 && active2;
+      const isPreview = !!previewPath && previewPath.has(conn.from) && previewPath.has(conn.to) && !isActive;
 
       return (
         <line
@@ -579,17 +681,18 @@ export function IncarnationTree() {
           y1={n1.y - (CENTER_ORIGIN as { x: number; y: number }).y}
           x2={n2.x - (CENTER_ORIGIN as { x: number; y: number }).x}
           y2={n2.y - (CENTER_ORIGIN as { x: number; y: number }).y}
-          stroke={isActive ? COLOR_ACTIVE : 'rgba(100, 100, 100, 0.3)'}
-          strokeWidth={2}
+          stroke={isActive ? COLOR_ACTIVE : isPreview ? 'rgba(0,250,154,0.65)' : 'rgba(100, 100, 100, 0.3)'}
+          strokeWidth={isPreview ? 2.25 : 2}
           strokeLinecap="round"
           style={{
             transition: 'stroke 0.3s ease',
             opacity: 1,
+            strokeDasharray: isPreview ? '5 5' : undefined,
           }}
         />
       );
     });
-  }, [activeNodes]);
+  }, [activeNodes, previewPath]);
 
   const nodeElements = useMemo(() => {
     return (rawData as Array<{ x: number; y: number }>).map((node, idx) => {
@@ -602,6 +705,7 @@ export function IncarnationTree() {
       const desc = (typeof dbData.description === 'string' ? dbData.description : '') ?? '';
 
       const isMatch = matchNodeSet ? matchNodeSet.has(idx) : false;
+      const isPreview = !!previewPath && previewPath.has(idx);
       const isGrandNode = !!dbData.grandNode;
       const isBlackHole = !!dbData.blackHole;
 
@@ -627,23 +731,57 @@ export function IncarnationTree() {
             height: nodeSize,
             transform: 'translate(-50%, -50%)',
             backgroundColor: 'transparent',
-            boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : 'none',
+            boxShadow: isMatch ? `0 0 6px ${COLOR_ACTIVE}` : isPreview && !isActive ? `0 0 8px rgba(0,250,154,0.55)` : 'none',
             border: 'none',
-            zIndex: isMatch ? 100 : isActive || isLeaf ? 10 : 1,
+            zIndex: isMatch ? 110 : isPreview ? 100 : isActive || isLeaf ? 10 : 1,
             cursor: 'pointer',
             animation: isMatch ? 'search-pulse 1.5s infinite ease-in-out' : 'none',
           }}
-          onMouseEnter={() => setHoveredNode(idx)}
-          onMouseLeave={() => setHoveredNode(null)}
+          onMouseEnter={() => {
+            setHoveredNode(idx);
+            if (isActive) {
+              setPreviewPath(null);
+              setPreviewTarget(null);
+              return;
+            }
+            const path = bestPathToTarget(idx);
+            if (!path || path.length === 0) {
+              setPreviewPath(null);
+              setPreviewTarget(null);
+              return;
+            }
+            let remaining = infinitePoints ? Number.POSITIVE_INFINITY : Math.max(0, maxPoints - activeNodes.size);
+            const clipped: number[] = [];
+            for (const n of path) {
+              if (activeNodes.has(n)) {
+                clipped.push(n);
+                continue;
+              }
+              if (remaining <= 0) break;
+              clipped.push(n);
+              remaining -= 1;
+            }
+            setPreviewPath(new Set(clipped));
+            setPreviewTarget(idx);
+          }}
+          onMouseLeave={() => {
+            setHoveredNode(null);
+            setPreviewPath(null);
+            setPreviewTarget(null);
+          }}
           onClick={(e) => {
             e.stopPropagation();
+            if (previewTarget === idx) {
+              setPreviewPath(null);
+              setPreviewTarget(null);
+            }
             handleNodeClick(idx);
           }}
         >
           <img
             src={nodeImage}
             alt="Node"
-            className={`w-full h-full object-contain ${isActive ? '' : 'opacity-80 grayscale'}`}
+            className={`w-full h-full object-contain ${isActive ? '' : isPreview ? 'opacity-95' : 'opacity-80 grayscale'}`}
           />
 
           {nodeData[String(idx + 1)] && (nodeData[String(idx + 1)]?.image || nodeData[String(idx + 1)]?.icon) ? (
@@ -670,7 +808,7 @@ export function IncarnationTree() {
         </div>
       );
     });
-  }, [activeNodes, adjacencyList, handleNodeClick, matchNodeSet, nodeData]);
+  }, [activeNodes, adjacencyList, bestPathToTarget, handleNodeClick, infinitePoints, matchNodeSet, maxPoints, nodeData, previewTarget, previewPath]);
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const delta = e.deltaY > 0 ? 0.9 : 1.1;

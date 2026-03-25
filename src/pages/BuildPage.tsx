@@ -299,6 +299,7 @@ export function BuildPage() {
   const [myRating, setMyRating] = useState<number | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
+  const canRate = useMemo(() => !!user && !!build?.id && build.status === 'PUBLISHED', [build?.id, build?.status, user]);
 
   const [itemCategories, setItemCategories] = useState<ItemCategoryRow[]>([]);
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -680,12 +681,14 @@ export function BuildPage() {
   }, [build]);
 
   const setRating = async (value: number) => {
-    if (!id || !user || ratingBusy) return;
+    const buildId = build?.id;
+    if (!buildId || !user || ratingBusy) return;
     setRatingBusy(true);
+    setRatingError(null);
     try {
       await runTransaction(firestore, async (tx) => {
-        const buildRef = doc(firestore, 'builds', id);
-        const ratingRef = doc(firestore, 'builds', id, 'ratings', user.uid);
+        const buildRef = doc(firestore, 'builds', buildId);
+        const ratingRef = doc(firestore, 'builds', buildId, 'ratings', user.uid);
         const [buildSnap, ratingSnap] = await Promise.all([tx.get(buildRef), tx.get(ratingRef)]);
         if (!buildSnap.exists()) throw new Error('Build not found.');
         const b = buildSnap.data() as any;
@@ -697,13 +700,38 @@ export function BuildPage() {
         tx.set(buildRef, { ratingSum: nextSum, ratingCount: nextCount, ratingAvg: nextAvg, updatedAt: serverTimestamp() }, { merge: true });
       });
       setMyRating(value);
-      setBuild(prev => prev ? { ...prev, ratingAvg: (prev.ratingSum - (myRating || 0) + value) / (prev.ratingCount + (myRating ? 0 : 1)) } : null);
+      setBuild(prev => prev ? { ...prev } : null);
     } catch (e: any) {
       setRatingError(e.message || 'Failed to rate.');
     } finally {
       setRatingBusy(false);
     }
   };
+
+  useEffect(() => {
+    let alive = true;
+    const buildId = build?.id;
+    const uid = user?.uid;
+    if (!buildId || !uid) {
+      setMyRating(null);
+      return;
+    }
+    const run = async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'builds', buildId, 'ratings', uid));
+        if (!alive) return;
+        const v = snap.exists() ? safeNumber((snap.data() as any)?.value) : 0;
+        setMyRating(v > 0 ? v : null);
+      } catch {
+        if (!alive) return;
+        setMyRating(null);
+      }
+    };
+    void run();
+    return () => {
+      alive = false;
+    };
+  }, [build?.id, user?.uid]);
 
   const deleteBuild = async () => {
     if (!build?.id) return;
@@ -739,6 +767,7 @@ export function BuildPage() {
 
         <div className="bg-white border border-brand-dark/10 rounded-2xl p-6 space-y-4 shadow-sm">
           {build.excerpt && <div className="text-sm text-brand-darker/70 leading-relaxed italic">{renderFormattedContent(build.excerpt)}</div>}
+          {ratingError ? <div className="bg-red-50 border border-red-200 text-red-900 rounded-xl px-4 py-2 text-sm">{ratingError}</div> : null}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-brand-dark/5">
             <div className="flex items-center gap-2">
               {[...Array(5)].map((_, i) => (
@@ -746,18 +775,25 @@ export function BuildPage() {
               ))}
               <span className="text-sm text-brand-darker/60 font-bold">{(build.ratingAvg || 0).toFixed(2)} ({build.ratingCount})</span>
             </div>
-            {user && (
+            {user ? (
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Your Rating</span>
                 <div className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map(v => (
-                    <button key={v} onClick={() => void setRating(v)} disabled={ratingBusy} className="p-1 rounded-lg hover:bg-brand-orange/10 transition-colors">
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => void setRating(v)}
+                      disabled={!canRate || ratingBusy}
+                      className="p-1 rounded-lg hover:bg-brand-orange/10 transition-colors disabled:opacity-60"
+                      title={canRate ? 'Rate this build' : 'You can rate only published builds'}
+                    >
                       <Star className={`w-5 h-5 ${v <= (myRating || 0) ? 'text-brand-orange fill-current' : 'text-brand-dark/20'}`} />
                     </button>
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
 
