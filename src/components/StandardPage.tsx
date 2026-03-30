@@ -1,11 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Footer } from './Footer';
 import { Navbar } from './Navbar';
-import { translations, type Language } from '../i18n/translations';
+import { useLanguage } from '../i18n/LanguageProvider';
 
 type StandardPageProps = {
   children: ReactNode;
@@ -22,8 +22,7 @@ function normalizeStructuredData(input: StandardPageProps['structuredData']) {
 }
 
 export function StandardPage({ children, title, description, canonicalPath, noindex, structuredData }: StandardPageProps) {
-  const [lang, setLang] = useState<Language>('en');
-  const t = useMemo(() => translations[lang], [lang]);
+  const { lang, setLang, t } = useLanguage();
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const location = useLocation();
   const navbarRef = useRef<HTMLDivElement | null>(null);

@@ -11,7 +11,7 @@ import { Footer } from '../../components/Footer';
 import { Hero } from '../../components/Hero';
 import { Navbar } from '../../components/Navbar';
 import { Sidebar } from '../../components/Sidebar';
-import { translations, type Language } from '../../i18n/translations';
+import { useLanguage } from '../../i18n/LanguageProvider';
 import { firestore } from '../../firebase';
 
 type HomeBlogPost = {
@@ -47,8 +47,7 @@ function safeBoolean(v: unknown) {
 }
 
 export function HomePage() {
-  const [lang, setLang] = useState<Language>('en');
-  const t = translations[lang];
+  const { lang, setLang, t } = useLanguage();
   const currentYear = new Date().getFullYear();
   const [homePosts, setHomePosts] = useState<HomeBlogPost[]>([]);
   const [homePostsLoading, setHomePostsLoading] = useState(true);
@@ -268,8 +267,7 @@ export function HomePage() {
                   <TriangleAlert className="w-5 h-5" />
                 </div>
                 <div className="min-w-0 text-sm text-yellow-950">
-                  Our Tier List is based on community voting. Each class is placed in the tier where it receives the majority of votes. Because it reflects
-                  community opinion, it may not always match a class&apos;s true strength or optimal placement.
+                  {t.tierListExplainer}
                 </div>
               </div>
             </section>
@@ -313,7 +311,7 @@ export function HomePage() {
             </section>
           </div>
 
-          <Sidebar t={t} />
+          <Sidebar />
         </div>
       </main>
 

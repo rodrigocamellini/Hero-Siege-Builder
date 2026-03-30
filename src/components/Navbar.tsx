@@ -345,7 +345,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-dark/30" />
                   <input
                     type="text"
-                    placeholder={lang === 'en' ? 'Search builds...' : lang === 'pt' ? 'Buscar builds...' : 'Поиск билдов...'}
+                    placeholder={t.navSearchPlaceholder}
                     className="w-full bg-brand-bg border border-brand-dark/5 rounded-lg py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-brand-orange transition-colors"
                   />
                 </div>

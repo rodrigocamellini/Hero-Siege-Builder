@@ -195,8 +195,11 @@ export function EtherTree() {
       setBgImages(list);
     });
 
+    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
+    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
+    const cfgId = `ether_tree${suffix}`;
     const unsubConfig = onSnapshot(
-      doc(firestore, 'config', 'ether_tree'),
+      doc(firestore, 'config', cfgId),
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as any;

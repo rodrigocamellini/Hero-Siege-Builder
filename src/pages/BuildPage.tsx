@@ -263,7 +263,6 @@ export function BuildPage() {
   const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
   const isAdmin = !!adminEmail && !!user?.email && user.email.trim().toLowerCase() === adminEmail;
   const navigate = useNavigate();
-  const tSidebar = translations.en;
 
   const [deleteAllowedRoles, setDeleteAllowedRoles] = useState<Role[]>(['DEVELOPER']);
   const [deletePostOpen, setDeletePostOpen] = useState(false);
@@ -1255,7 +1254,7 @@ export function BuildPage() {
             {renderContent()}
           </div>
           <div className="lg:col-span-1">
-            <Sidebar t={tSidebar} />
+            <Sidebar />
           </div>
         </div>
       </div>

@@ -242,7 +242,6 @@ export function ForumPage() {
   const { classKey: pathClassKey } = useParams<{ classKey?: string }>();
   const adminEmail = String(import.meta.env.VITE_ADMIN_EMAIL ?? '').trim().toLowerCase();
   const isAdmin = !!adminEmail && !!user?.email && user.email.trim().toLowerCase() === adminEmail;
-  const tSidebar = translations.en;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -1363,7 +1362,7 @@ export function ForumPage() {
           </section>
         </div>
 
-        <Sidebar t={tSidebar} />
+        <Sidebar />
       </div>
 
       <Modal open={newBuildOpen} title={editingBuildId ? 'Edit Build' : 'Submit Build'} onClose={() => setNewBuildOpen(false)} maxWidthClassName="max-w-6xl">

@@ -6,6 +6,7 @@ import { StandardPage } from '../components/StandardPage';
 import { classKeys, classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
 import { firestore } from '../firebase';
 import { useAuth } from '../features/auth/AuthProvider';
+import { useLanguage } from '../i18n/LanguageProvider';
 
 type StoredVote = { classKey: ClassKey; tier: Tier };
 type VoteDoc = { votes?: unknown };
@@ -26,6 +27,7 @@ function emptyVotes() {
 
 export function AccountTierListPage() {
   const { user, loading } = useAuth();
+  const { t } = useLanguage();
   const location = useLocation();
   const isAccountPath = location.pathname.startsWith('/account/');
   const [votes, setVotes] = useState<Record<ClassKey, Tier | ''>>(() => emptyVotes());
@@ -79,7 +81,7 @@ export function AccountTierListPage() {
     setSaved(false);
     if (!user) return;
     if (!allSelected) {
-      setError('Selecione o tier das 24 classes antes de salvar.');
+      setError(t.tierListPage.selectAllBeforeSave);
       return;
     }
 
@@ -97,7 +99,7 @@ export function AccountTierListPage() {
       );
       setSaved(true);
     } catch {
-      setError('Falha ao salvar votos.');
+      setError(t.tierListPage.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -112,13 +114,13 @@ export function AccountTierListPage() {
     >
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
         <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Tier List</h1>
-        <p className="mt-2 text-sm text-brand-darker/60">Vote em que tier cada classe deveria ficar. Você pode alterar depois.</p>
+        <p className="mt-2 text-sm text-brand-darker/60">{t.tierListPage.subtitle}</p>
         <div className="mt-6 border-2 border-dashed border-yellow-400/80 bg-yellow-50 rounded-2xl p-4 md:p-5 flex items-start gap-3">
           <div className="shrink-0 w-10 h-10 rounded-xl bg-yellow-400/20 text-yellow-900 flex items-center justify-center">
             <TriangleAlert className="w-5 h-5" />
           </div>
           <div className="min-w-0 text-sm text-yellow-950">
-            Our Tier List is based on community voting. Each class is placed in the tier where it receives the majority of votes. Because it reflects community opinion, it may not always match a class&apos;s true strength or optimal placement.
+            {t.tierListExplainer}
           </div>
         </div>
         <div className="mt-4 border-2 border-dashed border-sky-400/80 bg-sky-50 rounded-2xl p-4 md:p-5 flex items-start gap-3">
@@ -126,7 +128,7 @@ export function AccountTierListPage() {
             <TriangleAlert className="w-5 h-5" />
           </div>
           <div className="min-w-0 text-sm text-sky-950">
-            For your vote to be counted, you must assign a tier to all 24 classes and click &quot;Save votes&quot;. You can update any class anytime—just change the tier and save again.
+            {t.tierListVoteHint}
           </div>
         </div>
 
@@ -134,9 +136,9 @@ export function AccountTierListPage() {
           <div className="mt-8 bg-white border border-brand-dark/10 rounded-2xl p-6 animate-pulse h-24" />
         ) : !user ? (
           <div className="mt-8 bg-white border border-brand-dark/10 rounded-2xl p-6">
-            <div className="text-sm font-bold text-brand-darker">Você precisa estar logado para votar.</div>
+            <div className="text-sm font-bold text-brand-darker">{t.tierListPage.loginRequired}</div>
             <Link to={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="inline-block mt-3 text-brand-orange font-bold hover:underline">
-              Ir para login
+              {t.tierListPage.goToLogin}
             </Link>
           </div>
         ) : (
@@ -151,7 +153,7 @@ export function AccountTierListPage() {
                       <img src={`/images/classes/${k}.webp`} alt={classNames[k]} className="w-full h-full object-contain pixelated" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Classe</div>
+                      <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">{t.tierListPage.classLabel}</div>
                       <div className="font-bold text-brand-darker truncate">{classNames[k]}</div>
                     </div>
                     <select
@@ -173,7 +175,7 @@ export function AccountTierListPage() {
             )}
 
             {error ? <div className="mt-4 text-xs font-bold text-red-600">{error}</div> : null}
-            {saved ? <div className="mt-4 text-xs font-bold text-emerald-600">Votos salvos.</div> : null}
+            {saved ? <div className="mt-4 text-xs font-bold text-emerald-600">{t.tierListPage.saved}</div> : null}
 
             <div className="mt-6 flex items-center justify-end">
               <button
@@ -182,7 +184,7 @@ export function AccountTierListPage() {
                 disabled={saving || loadingVotes}
                 className="orange-button px-6 py-3 text-[10px] tracking-[0.2em] disabled:opacity-60"
               >
-                {saving ? 'Salvando...' : 'Salvar votos'}
+                {saving ? t.tierListPage.saving : t.tierListPage.saveVotes}
               </button>
             </div>
           </div>

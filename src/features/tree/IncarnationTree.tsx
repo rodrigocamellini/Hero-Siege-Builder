@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { Crosshair, Search, X } from 'lucide-react';
 import { firestore } from '../../firebase';
+import { useLanguage } from '../../i18n/LanguageProvider';
 import pointsJson from '../../../files_incarnation/incarnation_completa (1).json';
 import linksJson from '../../../files_incarnation/hsb_links_save (5).json';
 
@@ -170,6 +171,7 @@ type BgImage = {
 };
 
 export function IncarnationTree() {
+  const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeNodes, setActiveNodes] = useState<Set<number>>(() => new Set());
   const [nodeData, setNodeData] = useState<Record<string, FirestoreNodeData>>({});
@@ -186,7 +188,7 @@ export function IncarnationTree() {
   const [maxPoints, setMaxPoints] = useState(60);
   const [infinitePoints, setInfinitePoints] = useState(false);
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
-  const [maintenanceMessage, setMaintenanceMessage] = useState('Page is under maintenance. Please check back soon.');
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
@@ -362,8 +364,11 @@ export function IncarnationTree() {
       setBgImages(list);
     });
 
+    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
+    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
+    const cfgId = `incarnation_tree${suffix}`;
     const unsubConfig = onSnapshot(
-      doc(firestore, 'config', 'incarnation_tree'),
+      doc(firestore, 'config', cfgId),
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data() as any;
@@ -847,7 +852,7 @@ export function IncarnationTree() {
     <div className="w-full h-full flex items-center justify-center bg-brand-bg px-4 py-10">
       <div className="w-full max-w-2xl bg-white border border-brand-dark/10 rounded-2xl p-8 text-center">
         <div className="font-heading font-bold text-2xl md:text-3xl uppercase tracking-tight text-brand-darker">Incarnation Tree</div>
-        <div className="mt-3 text-sm text-brand-darker/70">{maintenanceMessage}</div>
+        <div className="mt-3 text-sm text-brand-darker/70">{maintenanceMessage || t.treeUi.maintenance}</div>
       </div>
     </div>
   ) : (
@@ -876,7 +881,7 @@ export function IncarnationTree() {
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search for Skill or Description..."
+          placeholder={t.treeUi.searchPlaceholder}
           className="bg-transparent border-none outline-none text-white w-full placeholder-gray-500 text-sm font-medium"
         />
         {searchTerm ? (
@@ -941,12 +946,12 @@ export function IncarnationTree() {
 
       <div className="absolute top-5 right-5 z-50 pointer-events-none">
         <div className="bg-[#000f1e]/90 border border-[#00FA9A] rounded-lg p-4 shadow-[0_0_20px_rgba(0,250,154,0.2)] backdrop-blur-sm w-80 pointer-events-auto">
-          <h3 className="text-[#00FA9A] text-sm border-b border-[#00FA9A]/30 pb-2 mb-2 uppercase tracking-wider font-bold">Node Details</h3>
+          <h3 className="text-[#00FA9A] text-sm border-b border-[#00FA9A]/30 pb-2 mb-2 uppercase tracking-wider font-bold">{t.treeUi.nodeDetails}</h3>
           {hoveredNode !== null ? (
             (() => {
               const dbData = nodeData[String(hoveredNode + 1)] || {};
               const name = (typeof dbData.name === 'string' && dbData.name) || `Node ${hoveredNode + 1}`;
-              const rawDescription = (typeof dbData.description === 'string' && dbData.description) || 'No description available.';
+              const rawDescription = (typeof dbData.description === 'string' && dbData.description) || t.treeUi.noDescription;
               const descriptionParts = splitEffectParts(rawDescription);
               const isActive = activeNodes.has(hoveredNode);
 
@@ -955,23 +960,23 @@ export function IncarnationTree() {
                   {/* ... id and status ... */}
                   <div className="flex justify-between items-center">
                     <div>
-                      <span className="text-[#00FA9A]/60 text-[10px] uppercase block">ID</span>
+                      <span className="text-[#00FA9A]/60 text-[10px] uppercase block">{t.treeUi.id}</span>
                       <span className="text-white font-mono text-xs font-bold">#{hoveredNode + 1}</span>
                     </div>
                     <div
                       className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${isActive ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}
                     >
-                      {isActive ? 'Active' : 'Inactive'}
+                      {isActive ? t.treeUi.active : t.treeUi.inactive}
                     </div>
                   </div>
 
                   <div>
-                    <span className="text-[#00FA9A]/60 text-[10px] uppercase block mb-1">Name</span>
+                    <span className="text-[#00FA9A]/60 text-[10px] uppercase block mb-1">{t.treeUi.name}</span>
                     <div className="text-white font-bold text-sm leading-tight">{name}</div>
                   </div>
 
                   <div>
-                    <span className="text-[#00FA9A]/60 text-[10px] uppercase block mb-1">Description</span>
+                    <span className="text-[#00FA9A]/60 text-[10px] uppercase block mb-1">{t.treeUi.description}</span>
                     <div className="space-y-1">
                       {descriptionParts.map((part, pIdx) => (
                         <p key={pIdx} className="text-sm leading-relaxed text-gray-300">
@@ -982,21 +987,23 @@ export function IncarnationTree() {
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-xs font-mono text-gray-500 border-t border-gray-800 pt-2">
-                    <span>ID: {hoveredNode + 1}</span>
+                    <span>
+                      {t.treeUi.id}: {hoveredNode + 1}
+                    </span>
                     {activeNodes.has(hoveredNode) ? (
                       <span className="text-green-400 font-bold flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                        ACTIVE
+                        {t.treeUi.active.toUpperCase()}
                       </span>
                     ) : (
-                      <span className="text-gray-600">INACTIVE</span>
+                      <span className="text-gray-600">{t.treeUi.inactive.toUpperCase()}</span>
                     )}
                   </div>
                 </div>
               );
             })()
           ) : (
-            <div className="text-gray-500 text-sm">Hover a node to see details</div>
+            <div className="text-gray-500 text-sm">{t.treeUi.hoverHint}</div>
           )}
         </div>
       </div>
@@ -1005,7 +1012,7 @@ export function IncarnationTree() {
         <div className="bg-[#000f1e]/90 border border-[#00FA9A] rounded-full px-6 py-3 shadow-[0_0_20px_rgba(0,250,154,0.2)] backdrop-blur-sm pointer-events-auto flex items-center gap-4">
           <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
             <span className="text-white">
-              Nodes: {activeNodes.size} / {maxPoints}
+              {t.treeUi.nodes}: {activeNodes.size} / {maxPoints}
             </span>
           </div>
           <button
@@ -1013,27 +1020,27 @@ export function IncarnationTree() {
             onClick={() => setShowResetModal(true)}
             className="px-4 py-1.5 rounded-full border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white transition text-xs font-bold uppercase tracking-wider"
           >
-            Reset
+            {t.treeUi.reset}
           </button>
           <button
             type="button"
             onClick={() => setShowActivateAllModal(true)}
             className="px-4 py-1.5 rounded-full border border-green-500/50 text-green-400 hover:bg-green-500 hover:text-white transition text-xs font-bold uppercase tracking-wider"
           >
-            Activate All
+            {t.treeUi.activateAll}
           </button>
           <button
             type="button"
             onClick={handleGenerateLink}
             className="px-4 py-1.5 rounded-full border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500 hover:text-white transition text-xs font-bold uppercase tracking-wider"
           >
-            Share Link
+            {t.treeUi.shareLink}
           </button>
           <button
             type="button"
             onClick={handleCenterTree}
             className="px-3 py-1.5 rounded-full border transition text-xs font-bold uppercase tracking-wider border-purple-500/50 text-purple-400 hover:bg-purple-500 hover:text-white"
-            title="Center the tree"
+            title={t.treeUi.centerTree}
           >
             <span className="inline-flex items-center gap-1">
               <Crosshair className="w-4 h-4" />

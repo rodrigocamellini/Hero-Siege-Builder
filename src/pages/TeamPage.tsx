@@ -159,7 +159,14 @@ export function TeamPage() {
                           />
                         </div>
                         <div className="name-box">
-                          <h3>{m.nick}</h3>
+                          <div>
+                            <h2>{m.nick}</h2>
+                          </div>
+                          {m.name ? (
+                            <div>
+                              <h3>{m.name}</h3>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                       <div className="inner-box">{m.description || 'Colaborador do projeto Hero Siege Builder.'}</div>

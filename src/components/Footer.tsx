@@ -20,6 +20,7 @@ function normalizeLogoUrl(raw: string) {
 
 export function Footer({ t, currentYear }: { t: Translation; currentYear: number }) {
   const [socials, setSocials] = useState<{ twitch: string; instagram: string; youtube: string } | null>(null);
+  const [websiteVersion, setWebsiteVersion] = useState('0.0.0');
   const [footerLogoUrl, setFooterLogoUrl] = useState(() => {
     try {
       const v = window.localStorage.getItem('hsb_branding_footerLogoUrl') ?? '';
@@ -50,6 +51,23 @@ export function Footer({ t, currentYear }: { t: Translation; currentYear: number
         youtube: typeof d?.youtube === 'string' ? d.youtube : '',
       });
     });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(firestore, 'appSettings', 'timeline'),
+      (snap) => {
+        if (!snap.exists()) {
+          setWebsiteVersion('0.0.0');
+          return;
+        }
+        const d = snap.data() as any;
+        const v = typeof d?.currentVersion === 'string' ? d.currentVersion.trim() : '';
+        setWebsiteVersion(v || '0.0.0');
+      },
+      () => setWebsiteVersion('0.0.0'),
+    );
     return () => unsub();
   }, []);
 
@@ -141,8 +159,32 @@ export function Footer({ t, currentYear }: { t: Translation; currentYear: number
             ) : null}
           </div>
         </div>
-        <div className="mt-12 pt-8 border-t border-white/5 text-center text-[10px] text-white/20 uppercase tracking-[0.2em]">
-          {t.rights.replace('{{year}}', String(currentYear))}
+        <div className="mt-12 pt-8 border-t border-white/5 text-center text-[10px] text-white/20 uppercase tracking-[0.2em] space-y-2">
+          <div>
+            {(() => {
+              const base = t.rights;
+              const parts = base.split('{{year}}');
+              return (
+                <>
+                  {parts[0] ?? ''}
+                  <span className="text-brand-orange">{currentYear}</span>
+                  {parts[1] ?? ''}
+                </>
+              );
+            })()}
+          </div>
+          <div>
+            {(() => {
+              const parts = t.websiteVersionLabel.split('{{version}}');
+              return (
+                <>
+                  {parts[0] ?? ''}
+                  <span className="text-brand-orange">{websiteVersion}</span>
+                  {parts[1] ?? ''}
+                </>
+              );
+            })()}
+          </div>
         </div>
       </div>
     </footer>

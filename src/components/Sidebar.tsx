@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
-import { ChevronDown, Crown, Star, Trophy, Twitch, User } from 'lucide-react';
-import type { Translation } from '../i18n/translations';
+import { ChevronDown, Crown, Star, Trophy, Twitch, User, Wrench, RefreshCw, Rocket } from 'lucide-react';
 import { classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
 import { firestore } from '../firebase';
+import { useLanguage } from '../i18n/LanguageProvider';
 import { SeasonCountdown } from './SeasonCountdown';
 
 type PodiumEntry = { classKey: ClassKey; votes: number };
@@ -138,7 +138,8 @@ async function probeKickLive(kickUrl: string) {
   return inferLiveFromKickHtml(html);
 }
 
-export function Sidebar({ t }: { t: Translation }) {
+export function Sidebar() {
+  const { t } = useLanguage();
   const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
   const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
   const [topBuilders, setTopBuilders] = useState<TopBuilder[] | null>(null);
@@ -146,6 +147,7 @@ export function Sidebar({ t }: { t: Translation }) {
   const [partnersList, setPartnersList] = useState<PartnerRow[]>([]);
   const [featuredPartner, setFeaturedPartner] = useState<PartnerRow | null>(null);
   const [featuredPartnerLive, setFeaturedPartnerLive] = useState<boolean | null>(null);
+  const [timeline, setTimeline] = useState<Array<{ id: string; version: string; type: 'fix' | 'change' | 'major'; title: string; desc: string; createdAt: any }>>([]);
 
   useEffect(() => {
     const loadMedia = async () => {
@@ -257,6 +259,35 @@ export function Sidebar({ t }: { t: Translation }) {
       setPodiumS(parsed);
     };
     void load();
+  }, []);
+
+  useEffect(() => {
+    let stop = false;
+    const run = async () => {
+      try {
+        const snap = await getDocs(query(collection(firestore, 'website_updates'), orderBy('createdAt', 'desc'), limit(20)));
+        if (stop) return;
+        const list: Array<{ id: string; version: string; type: 'fix' | 'change' | 'major'; title: string; desc: string; createdAt: any }> = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          list.push({
+            id: d.id,
+            version: String(data?.version ?? ''),
+            type: (data?.type === 'fix' || data?.type === 'change' || data?.type === 'major') ? data.type : 'change',
+            title: String(data?.title ?? ''),
+            desc: String(data?.desc ?? ''),
+            createdAt: data?.createdAt ?? null,
+          });
+        });
+        setTimeline(list);
+      } catch {
+        if (!stop) setTimeline([]);
+      }
+    };
+    void run();
+    return () => {
+      stop = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -402,7 +433,7 @@ export function Sidebar({ t }: { t: Translation }) {
 
       {media && (
         <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
-          <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight">Official Media</h3>
+          <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight">{t.sidebar.officialMedia}</h3>
           <div className="grid grid-cols-3 gap-4">
             {(['site', 'discord', 'reddit'] as const).map((key) => {
               const item = media[key];
@@ -438,18 +469,18 @@ export function Sidebar({ t }: { t: Translation }) {
       {featuredPartner ? (
         <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <h3 className="font-heading font-bold text-lg uppercase tracking-tight">Partner Spotlight</h3>
+            <h3 className="font-heading font-bold text-lg uppercase tracking-tight">{t.sidebar.partnerSpotlight}</h3>
             {featuredPartnerLive === true ? (
               <span className="px-3 py-1 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-widest">
-                Live
+                {t.sidebar.live}
               </span>
             ) : featuredPartnerLive === false ? (
               <span className="px-3 py-1 rounded-full bg-brand-bg border border-brand-dark/10 text-[10px] font-black uppercase tracking-widest text-brand-darker/60">
-                Offline
+                {t.sidebar.offline}
               </span>
             ) : (
               <span className="px-3 py-1 rounded-full bg-brand-bg border border-brand-dark/10 text-[10px] font-black uppercase tracking-widest text-brand-darker/60">
-                Status
+                {t.sidebar.status}
               </span>
             )}
           </div>
@@ -514,7 +545,7 @@ export function Sidebar({ t }: { t: Translation }) {
                   e.currentTarget.style.display = 'none';
                 }}
               />
-              <h3 className="text-xs font-bold text-white/70 uppercase tracking-widest">Players Online</h3>
+              <h3 className="text-xs font-bold text-white/70 uppercase tracking-widest">{t.sidebar.playersOnline}</h3>
               {steamPlayers !== null && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
             </div>
             <div className="flex items-baseline justify-center gap-3">
@@ -534,7 +565,7 @@ export function Sidebar({ t }: { t: Translation }) {
 
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight flex items-center justify-between">
-          S Tier Podium
+          {t.sidebar.sTierPodium}
           <Crown className="w-4 h-4 text-brand-orange" />
         </h3>
         {podiumS === null ? (
@@ -630,7 +661,9 @@ export function Sidebar({ t }: { t: Translation }) {
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-bold text-brand-darker truncate group-hover:text-brand-orange transition-colors">{builder.nick}</div>
-                      <div className="text-[10px] font-bold text-brand-dark/30 uppercase tracking-widest tabular-nums">{builder.buildCount} builds</div>
+                      <div className="text-[10px] font-bold text-brand-dark/30 uppercase tracking-widest tabular-nums">
+                        {builder.buildCount} {t.sidebar.builds}
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
@@ -649,29 +682,35 @@ export function Sidebar({ t }: { t: Translation }) {
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
-        <h3 className="font-heading font-bold text-lg mb-8 uppercase tracking-tight">{t.gameUpdates}</h3>
-        <div className="space-y-8">
-          {t.updates.map((update, i) => (
-            <div key={i} className="relative pl-6 group cursor-pointer">
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-dark/5 group-hover:bg-brand-orange transition-colors rounded-full"></div>
-              <h4 className="font-bold text-sm mb-1 group-hover:text-brand-orange transition-colors">{update.title}</h4>
-              <p className="text-[10px] font-bold text-brand-dark/30 mb-2 uppercase tracking-wider">{update.date}</p>
-              <p className="text-xs text-brand-dark/50 leading-relaxed">{update.desc}</p>
-            </div>
-          ))}
+        <h3 className="font-heading font-bold text-lg mb-8 uppercase tracking-tight">{t.websiteUpdates}</h3>
+        <div className="space-y-6">
+          {(timeline.length > 0 ? timeline : t.updates.map((u, i) => ({ id: String(i), version: '', type: 'change' as const, title: u.title, desc: u.desc, createdAt: null }))).slice(0, 5).map((entry, i) => {
+            const Icon = entry.type === 'fix' ? Wrench : entry.type === 'major' ? Rocket : RefreshCw;
+            return (
+              <Link to={entry.id ? `/timeline#${encodeURIComponent(entry.id)}` : '/timeline'} key={entry.id || i} className="relative pl-10 group block">
+                <div className="absolute left-0 top-1 w-7 h-7 rounded-xl bg-brand-bg border border-brand-dark/10 grid place-items-center">
+                  <Icon className={`w-4 h-4 ${entry.type === 'fix' ? 'text-emerald-600' : entry.type === 'major' ? 'text-red-600' : 'text-brand-orange'}`} />
+                </div>
+                <div className="font-bold text-sm mb-0.5 text-brand-darker group-hover:text-brand-orange transition-colors">
+                  {entry.version ? `v${entry.version} — ` : ''}{entry.title}
+                </div>
+                <p className="text-xs text-brand-dark/50 leading-relaxed">{entry.desc}</p>
+              </Link>
+            );
+          })}
         </div>
       </div>
 
       <div className="bg-gradient-to-br from-brand-orange to-brand-orange-dark p-8 text-center rounded-2xl shadow-sm">
-        <h3 className="text-2xl font-black text-white italic uppercase mb-2">Join the Fight</h3>
-        <p className="text-white/90 text-xs mb-6">Start your journey in Tarethiel today!</p>
+        <h3 className="text-2xl font-black text-white italic uppercase mb-2">{t.sidebar.joinTheFight}</h3>
+        <p className="text-white/90 text-xs mb-6">{t.sidebar.joinTheFightDesc}</p>
         <a
           href="https://store.steampowered.com/app/269210/Hero_Siege/"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-block w-full bg-white text-brand-darker font-bold uppercase py-3 text-xs tracking-widest hover:bg-brand-bg transition-colors rounded-xl"
         >
-          Buy on Steam
+          {t.sidebar.buyOnSteam}
         </a>
       </div>
     </aside>

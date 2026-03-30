@@ -8,10 +8,13 @@ import { RegisterPage } from './pages/RegisterPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { AdminPage } from './pages/AdminPage';
 import { StandardPage } from './components/StandardPage';
+import { AccountLandingPage } from './pages/AccountLandingPage';
+import { DatabaseLandingPage } from './pages/DatabaseLandingPage';
 import { AccountTierListPage } from './pages/AccountTierListPage';
 import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { EtherTree } from './features/tree/EtherTree';
 import { IncarnationTree } from './features/tree/IncarnationTree';
+import { TreeLandingPage } from './pages/TreeLandingPage';
 import { TeamPage } from './pages/TeamPage';
 import { PartnersPage } from './pages/PartnersPage';
 import { NetworkPage } from './pages/NetworkPage';
@@ -20,8 +23,10 @@ import { BlogPostPage } from './pages/BlogPostPage';
 import { BlogEditorPage } from './pages/BlogEditorPage';
 import { ForumPage } from './pages/ForumPage';
 import { BuildPage } from './pages/BuildPage';
+import { TimelinePage } from './pages/TimelinePage';
 import { ContactPage } from './pages/ContactPage';
 import { AdsenseMetaManager } from './components/AdsenseMetaManager';
+import { LanguageProvider } from './i18n/LanguageProvider';
 import { classNames, type ClassKey } from './data/tierlist';
 import { EXTRA_SHIELDS } from './data/extraShields';
 import { Modal } from './components/Modal';
@@ -500,7 +505,7 @@ function ClassesDatabasePage() {
           </div>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
 
       <Modal
@@ -717,7 +722,7 @@ function RunesDatabasePage() {
           </div>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -918,7 +923,7 @@ function ChaosTowerDatabasePage() {
           </section>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -1188,7 +1193,7 @@ function MercenariesDatabasePage() {
           </div>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -1405,7 +1410,7 @@ function KeysDatabasePage() {
           </section>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -1601,7 +1606,7 @@ function AugmentsDatabasePage() {
           </div>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -1800,7 +1805,7 @@ function MiningDatabasePage() {
           </div>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -2092,7 +2097,7 @@ function GemsDatabasePage() {
           </section>
 
         </div>
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -2671,7 +2676,7 @@ function CharmsDatabasePage() {
           </Modal>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -3061,7 +3066,7 @@ function RelicsDatabasePage() {
           {renderExtraTable('Relics with Chance on Cast', filteredOnCast)}
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -3416,7 +3421,7 @@ function ItemsDatabasePage() {
           )}
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
 
       <Modal open={!!selectedItem} title={selectedItem?.name || 'Item'} onClose={closeModal} maxWidthClassName="max-w-2xl">
@@ -3491,7 +3496,7 @@ function QuestsDatabasePage() {
           </div>
         </div>
 
-        <Sidebar t={t} />
+        <Sidebar />
       </div>
     </StandardPage>
   );
@@ -3499,7 +3504,7 @@ function QuestsDatabasePage() {
 
 export default function App() {
   return (
-    <>
+    <LanguageProvider>
       <AdsenseMetaManager />
       <Routes>
       <Route path="/" element={<HomePage />} />
@@ -3507,33 +3512,7 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/admin/login" element={<AdminLoginPage />} />
       <Route path="/admin/*" element={<AdminPage />} />
-      <Route
-        path="/account"
-        element={
-          <StandardPage title="Account | Hero Siege Builder" description="Account options." canonicalPath="/account" noindex>
-            <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
-              <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Account</h1>
-              <p className="mt-2 text-sm text-brand-darker/60">Escolha uma opção.</p>
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Link
-                  to="/account/settings"
-                  className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                >
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Configurações</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Foto, nick e senha.</div>
-                </Link>
-                <Link
-                  to="/account/tierlist"
-                  className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                >
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Tier List</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Vote na tier list.</div>
-                </Link>
-              </div>
-            </div>
-          </StandardPage>
-        }
-      />
+      <Route path="/account" element={<AccountLandingPage />} />
       <Route path="/account/settings" element={<AccountSettingsPage />} />
       <Route
         path="/account/tierlist"
@@ -3550,84 +3529,7 @@ export default function App() {
         path="/contact"
         element={<ContactPage />}
       />
-      <Route
-        path="/database"
-        element={
-          <StandardPage
-            title="Database | Hero Siege Builder"
-            description="Explore classes, items, and game data."
-            canonicalPath="/database"
-            structuredData={[
-              breadcrumbListLd([
-                { name: 'Home', path: '/' },
-                { name: 'Database', path: '/database' },
-              ]),
-              collectionPageLd({ name: 'Database', description: 'Explore classes, items, and game data.', path: '/database' }),
-            ]}
-          >
-            <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
-              <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Database</h1>
-              <p className="mt-2 text-sm text-brand-darker/60">Explore classes, items, and game data.</p>
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                <Link
-                  to="/database/classes"
-                  className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                >
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Classes</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Classes list and details.</div>
-                </Link>
-                <Link
-                  to="/database/items"
-                  className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                >
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Items</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Game item database.</div>
-                </Link>
-                <Link to="/database/runes" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Runes</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Coming soon.</div>
-                </Link>
-                <Link to="/database/relics" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Relics</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Passive relic scaling and list.</div>
-                </Link>
-                <Link to="/database/chaos-tower" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Chaos Tower</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Event dungeon details and rewards.</div>
-                </Link>
-                <Link to="/database/mercenarios" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Mercenaries</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Mercenary types and skill tables.</div>
-                </Link>
-                <Link to="/database/chaves" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Keys</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Dungeon, unique zone, and chest keys.</div>
-                </Link>
-                <Link to="/database/augments" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Augments</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Angelic augments and upgrade rules.</div>
-                </Link>
-                <Link to="/database/quests" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Quests</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Quest log (under update).</div>
-                </Link>
-                <Link to="/database/mineracao" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Mining</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Nodes, levels, and prospecting results.</div>
-                </Link>
-                <Link to="/database/gems" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Gems &amp; Jewels</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Socketables and their effects.</div>
-                </Link>
-                <Link to="/database/charms" className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors">
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Charms</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Charm list, tiers and rolls.</div>
-                </Link>
-              </div>
-            </div>
-          </StandardPage>
-        }
-      />
+      <Route path="/database" element={<DatabaseLandingPage />} />
       <Route
         path="/database/classes"
         element={<ClassesDatabasePage />}
@@ -3676,44 +3578,7 @@ export default function App() {
         path="/database/items"
         element={<ItemsDatabasePage />}
       />
-      <Route
-        path="/tree"
-        element={
-          <StandardPage
-            title="Tree | Hero Siege Builder"
-            description="Choose Ether or Incarnation tree."
-            canonicalPath="/tree"
-            structuredData={[
-              breadcrumbListLd([
-                { name: 'Home', path: '/' },
-                { name: 'Tree', path: '/tree' },
-              ]),
-              collectionPageLd({ name: 'Tree', description: 'Choose Ether or Incarnation tree.', path: '/tree' }),
-            ]}
-          >
-            <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
-              <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Tree</h1>
-              <p className="mt-2 text-sm text-brand-darker/60">Choose a section.</p>
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-                <Link
-                  to="/tree/ether"
-                  className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                >
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Ether</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Maintenance.</div>
-                </Link>
-                <Link
-                  to="/tree/incarnation"
-                  className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-                >
-                  <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Incarnation</div>
-                  <div className="mt-2 text-sm text-brand-darker/60">Live.</div>
-                </Link>
-              </div>
-            </div>
-          </StandardPage>
-        }
-      />
+      <Route path="/tree" element={<TreeLandingPage />} />
       <Route
         path="/tree/ether"
         element={
@@ -3755,8 +3620,9 @@ export default function App() {
       <Route path="/network" element={<NetworkPage />} />
       <Route path="/team" element={<TeamPage />} />
       <Route path="/partners" element={<PartnersPage />} />
+      <Route path="/timeline" element={<TimelinePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </>
+    </LanguageProvider>
   );
 }

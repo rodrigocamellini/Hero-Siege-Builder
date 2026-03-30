@@ -1,6 +1,6 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image } from 'lucide-react';
+import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image, Timer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
@@ -11,11 +11,17 @@ import { AdminContactPanel } from '../features/admin/AdminContactPanel';
 import { AdminBannerPanel } from '../features/admin/AdminBannerPanel';
 import { AdminHeroSkillsPanel } from '../features/admin/AdminHeroSkillsPanel';
 import { UsersTable } from '../features/admin/UsersTable';
+import { AdminTimelinePanel } from '../features/admin/AdminTimelinePanel';
 import { useAuth } from '../features/auth/AuthProvider';
 import { Modal } from '../components/Modal';
 import { firestore } from '../firebase';
 
 type EtherNodeRow = { id: string; name: string; description: string; image: string };
+
+const isLocalHostAdmin = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
+const adminConfigSuffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHostAdmin ? '_local' : '');
+const INC_TREE_CONFIG_ID = `incarnation_tree${adminConfigSuffix}`;
+const ETHER_TREE_CONFIG_ID = `ether_tree${adminConfigSuffix}`;
 
 type EtherBgRow = {
   id: string;
@@ -426,7 +432,7 @@ function AdminEtherTreePanel() {
     const loadConfig = async () => {
       setConfigLoading(true);
       try {
-        const snap = await getDoc(doc(firestore, 'config', 'ether_tree'));
+        const snap = await getDoc(doc(firestore, 'config', ETHER_TREE_CONFIG_ID));
         if (snap.exists()) {
           const data = snap.data() as any;
           if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
@@ -563,7 +569,7 @@ function AdminEtherTreePanel() {
     setFlash(null);
     try {
       await setDoc(
-        doc(firestore, 'config', 'ether_tree'),
+        doc(firestore, 'config', ETHER_TREE_CONFIG_ID),
         { maxPoints: Number(maxPoints) || 0, infinitePoints, maintenanceEnabled, maintenanceMessage: maintenanceMessage.trim(), updatedAt: serverTimestamp() },
         { merge: true },
       );
@@ -640,7 +646,7 @@ function AdminEtherTreePanel() {
         const cfgMaintenanceMessage = typeof cfg.maintenanceMessage === 'string' ? cfg.maintenanceMessage.trim() : '';
         if (Number.isFinite(cfgMaxPoints) || typeof cfgInfinite === 'boolean' || typeof cfgMaintenanceEnabled === 'boolean' || cfgMaintenanceMessage) {
           await setDoc(
-            doc(firestore, 'config', 'ether_tree'),
+            doc(firestore, 'config', ETHER_TREE_CONFIG_ID),
             {
               ...(Number.isFinite(cfgMaxPoints) ? { maxPoints: cfgMaxPoints } : {}),
               ...(typeof cfgInfinite === 'boolean' ? { infinitePoints: cfgInfinite } : {}),
@@ -1312,7 +1318,7 @@ function AdminIncarnationTreePanel() {
     const loadConfig = async () => {
       setConfigLoading(true);
       try {
-        const snap = await getDoc(doc(firestore, 'config', 'incarnation_tree'));
+        const snap = await getDoc(doc(firestore, 'config', INC_TREE_CONFIG_ID));
         if (snap.exists()) {
           const data = snap.data() as any;
           if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
@@ -1527,7 +1533,7 @@ function AdminIncarnationTreePanel() {
     try {
       const finalMaxPoints = Number(maxPoints);
       await setDoc(
-        doc(firestore, 'config', 'incarnation_tree'),
+        doc(firestore, 'config', INC_TREE_CONFIG_ID),
         { 
           maxPoints: isNaN(finalMaxPoints) ? 60 : finalMaxPoints, 
           infinitePoints, 
@@ -1613,7 +1619,7 @@ function AdminIncarnationTreePanel() {
         const cfgMaintenanceMessage = typeof cfg.maintenanceMessage === 'string' ? cfg.maintenanceMessage.trim() : '';
         if (Number.isFinite(cfgMaxPoints) || typeof cfgInfinite === 'boolean' || typeof cfgMaintenanceEnabled === 'boolean' || cfgMaintenanceMessage) {
           await setDoc(
-            doc(firestore, 'config', 'incarnation_tree'),
+            doc(firestore, 'config', INC_TREE_CONFIG_ID),
             {
               ...(Number.isFinite(cfgMaxPoints) ? { maxPoints: cfgMaxPoints } : {}),
               ...(typeof cfgInfinite === 'boolean' ? { infinitePoints: cfgInfinite } : {}),
@@ -3037,6 +3043,7 @@ export function AdminPage() {
                   <AdminSidebarLink href="/admin/team" label="Team" icon={<Users className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/partners" label="Partners" icon={<Star className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/timeline" label="Timeline" icon={<Timer className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/hero-skills" label="Hero Skills" icon={<Zap className="w-5 h-5" />} />
               </nav>
             </div>
@@ -3053,6 +3060,7 @@ export function AdminPage() {
               <Route index element={<Navigate to="/admin/users" replace />} />
               <Route path="users" element={<UsersTable />} />
               <Route path="settings" element={<AdminSettingsPanel />} />
+              <Route path="timeline" element={<AdminTimelinePanel />} />
               <Route path="ether-tree" element={<AdminEtherTreePanel />} />
               <Route path="incarnation-tree" element={<AdminIncarnationTreePanel />} />
               <Route path="builds" element={<AdminBuildsPanel />} />
