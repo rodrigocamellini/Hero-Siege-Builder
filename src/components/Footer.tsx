@@ -1,6 +1,6 @@
 'use client';
 
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Instagram, Twitch, Youtube } from 'lucide-react';
@@ -67,6 +67,22 @@ export function Footer({ t, currentYear }: { t: Translation; currentYear: number
         setWebsiteVersion(v || '0.0.0');
       },
       () => setWebsiteVersion('0.0.0'),
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(firestore, 'website_updates'), orderBy('createdAt', 'desc'), limit(1));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const first = snap.docs[0];
+        if (!first) return;
+        const d = first.data() as any;
+        const v = typeof d?.version === 'string' ? d.version.trim() : '';
+        if (v) setWebsiteVersion(v);
+      },
+      () => {},
     );
     return () => unsub();
   }, []);

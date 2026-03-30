@@ -46,6 +46,13 @@ export function AdminSettingsPanel() {
   const [mediaSaving, setMediaSaving] = useState(false);
   const [mediaSavedOk, setMediaSavedOk] = useState(false);
 
+  const [mediaHsbSettings, setMediaHsbSettings] = useState({
+    discord: { title: 'Discord', image: 'discord.webp', link: '' },
+    twitch: { title: 'Twitch', image: 'twitch.webp', link: '' },
+  });
+  const [mediaHsbSaving, setMediaHsbSaving] = useState(false);
+  const [mediaHsbSavedOk, setMediaHsbSavedOk] = useState(false);
+
   const [socialLinks, setSocialLinks] = useState({ twitch: '', instagram: '', youtube: '' });
   const [socialSaving, setSocialSaving] = useState(false);
   const [socialSavedOk, setSocialSavedOk] = useState(false);
@@ -100,6 +107,11 @@ export function AdminSettingsPanel() {
         const mediaSnap = await getDoc(doc(firestore, 'appSettings', 'media'));
         if (mediaSnap.exists()) {
           setMediaSettings(mediaSnap.data() as any);
+        }
+
+        const mediaHsbSnap = await getDoc(doc(firestore, 'appSettings', 'media_hsb'));
+        if (mediaHsbSnap.exists()) {
+          setMediaHsbSettings(mediaHsbSnap.data() as any);
         }
 
         const socialsSnap = await getDoc(doc(firestore, 'appSettings', 'socials'));
@@ -240,6 +252,20 @@ export function AdminSettingsPanel() {
       setError(firestoreErrorMessage(err));
     } finally {
       setMediaSaving(false);
+    }
+  }
+
+  async function saveMediaHsbSettings() {
+    setError(null);
+    setMediaHsbSavedOk(false);
+    setMediaHsbSaving(true);
+    try {
+      await setDoc(doc(firestore, 'appSettings', 'media_hsb'), { ...mediaHsbSettings, updatedAt: serverTimestamp() });
+      setMediaHsbSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setMediaHsbSaving(false);
     }
   }
 
@@ -668,7 +694,63 @@ export function AdminSettingsPanel() {
         <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Official Media</div>
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Official Media HSB</div>
+              <div className="text-sm font-bold text-brand-darker">Configurar links da sidebar</div>
+              <div className="text-xs text-brand-darker/60">Edite os títulos, imagens e links do Discord e Twitch.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveMediaHsbSettings()}
+              disabled={loading || mediaHsbSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {mediaHsbSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-6 space-y-6">
+            {(['discord', 'twitch'] as const).map((key) => (
+              <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-white border border-brand-dark/5 rounded-2xl">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Título</label>
+                  <input
+                    type="text"
+                    value={mediaHsbSettings[key].title}
+                    onChange={(e) => setMediaHsbSettings((prev) => ({ ...prev, [key]: { ...prev[key], title: e.target.value } }))}
+                    className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Imagem (filename)</label>
+                  <input
+                    type="text"
+                    value={mediaHsbSettings[key].image}
+                    onChange={(e) => setMediaHsbSettings((prev) => ({ ...prev, [key]: { ...prev[key], image: e.target.value } }))}
+                    className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40">Link</label>
+                  <input
+                    type="text"
+                    value={mediaHsbSettings[key].link}
+                    onChange={(e) => setMediaHsbSettings((prev) => ({ ...prev, [key]: { ...prev[key], link: e.target.value } }))}
+                    className="w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-orange transition-colors"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {mediaHsbSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Mídias oficiais HSB atualizadas.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Official Media PAS</div>
               <div className="text-sm font-bold text-brand-darker">Configurar links da sidebar</div>
               <div className="text-xs text-brand-darker/60">Edite os títulos, imagens e links do Discord, Reddit e Site.</div>
             </div>

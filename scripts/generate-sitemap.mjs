@@ -191,6 +191,18 @@ const baseUrl = normalizeBaseUrl(process.env.SITE_URL || 'https://www.herosiegeb
 const srcDir = path.join(repoRoot, 'src');
 const sitemapPath = path.join(repoRoot, 'public', 'sitemap.xml');
 const robotsPath = path.join(repoRoot, 'public', 'robots.txt');
+const rssConfigPath = path.join(repoRoot, 'public', 'rss-config.json');
+
+{
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '';
+  const apiKey = process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || '';
+  const siteUrl = normalizeBaseUrl(process.env.VITE_SITE_URL || process.env.SITE_URL || baseUrl);
+  await writeFile(
+    rssConfigPath,
+    JSON.stringify({ projectId: String(projectId), apiKey: String(apiKey), siteUrl: String(siteUrl) }, null, 2) + '\n',
+    'utf8',
+  );
+}
 
 const sourceFiles = await listSourceFiles(srcDir);
 const rawPaths = [];

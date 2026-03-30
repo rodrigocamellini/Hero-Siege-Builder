@@ -346,7 +346,13 @@ export function IncarnationTree() {
   );
 
   useEffect(() => {
-    const unsubNodes = onSnapshot(collection(firestore, 'incarnation_tree_nodes'), (snap) => {
+    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
+    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
+    const nodesColl = `incarnation_tree_nodes${suffix}`;
+    const bgColl = `incarnation_backgrounds${suffix}`;
+    const cfgId = `incarnation_tree${suffix}`;
+
+    const unsubNodes = onSnapshot(collection(firestore, nodesColl), (snap) => {
       const data: Record<string, FirestoreNodeData> = {};
       snap.forEach((d) => {
         data[d.id] = d.data() as FirestoreNodeData;
@@ -354,7 +360,7 @@ export function IncarnationTree() {
       setNodeData(data);
     });
 
-    const unsubBg = onSnapshot(collection(firestore, 'incarnation_backgrounds'), (snap) => {
+    const unsubBg = onSnapshot(collection(firestore, bgColl), (snap) => {
       const list: BgImage[] = [];
       snap.forEach((d) => {
         const data = d.data() as Partial<BgImage>;
@@ -364,9 +370,6 @@ export function IncarnationTree() {
       setBgImages(list);
     });
 
-    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
-    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
-    const cfgId = `incarnation_tree${suffix}`;
     const unsubConfig = onSnapshot(
       doc(firestore, 'config', cfgId),
       (snap) => {

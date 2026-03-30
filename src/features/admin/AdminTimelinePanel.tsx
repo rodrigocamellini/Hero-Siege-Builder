@@ -1,6 +1,7 @@
 'use client';
 
-import { addDoc, collection, deleteDoc, doc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2, Wrench, RefreshCw, Rocket } from 'lucide-react';
 import { Modal } from '../../components/Modal';
@@ -13,6 +14,52 @@ function parseSemver(v: string): [number, number, number] | null {
   const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(v.trim());
   if (!m) return null;
   return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      const id = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      promise.finally(() => window.clearTimeout(id));
+    }),
+  ]);
+}
+
+function buildRssXml(list: TimelineRow[], baseUrl: string) {
+  const site = baseUrl.replace(/\/+$/, '');
+  const xmlEscape = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const items = list
+    .map((e) => {
+      const link = `${site}/timeline#${encodeURIComponent(e.id)}`;
+      const pub =
+        (e.createdAt && typeof (e.createdAt as any)?.toDate === 'function'
+          ? (e.createdAt as any).toDate()
+          : new Date()) as Date;
+      const pubDate = pub.toUTCString();
+      const title = `v${e.version} — ${e.title}`;
+      const desc = e.desc || '';
+      return `
+    <item>
+      <title>${xmlEscape(title)}</title>
+      <link>${xmlEscape(link)}</link>
+      <guid isPermaLink="false">${xmlEscape(e.id)}</guid>
+      <pubDate>${xmlEscape(pubDate)}</pubDate>
+      <description>${xmlEscape(desc)}</description>
+    </item>`;
+    })
+    .join('');
+  const rss = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Hero Siege Builder — Website Updates</title>
+    <link>${xmlEscape(site)}/timeline</link>
+    <description>Latest website updates and release notes</description>
+    ${items}
+  </channel>
+</rss>`;
+  return rss.trim();
 }
 
 function cmpSemver(a: string, b: string) {
@@ -40,6 +87,8 @@ export function AdminTimelinePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState('0.0.0');
+  const [feedUrl, setFeedUrl] = useState<string | null>(null);
+  const [generatingFeed, setGeneratingFeed] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -52,6 +101,39 @@ export function AdminTimelinePanel() {
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
 
   const suggestedVersion = useMemo(() => bumpVersion(currentVersion, bump), [currentVersion, bump]);
+  const rssUrl = useMemo(() => {
+    const base =
+      (((import.meta as any)?.env?.VITE_SITE_URL as string | undefined) || '').toString().trim() ||
+      (typeof window !== 'undefined' ? window.location.origin : 'https://www.herosiegebuilder.com');
+    return `${base.replace(/\/+$/, '')}/rss.xml`;
+  }, []);
+  const siteBaseUrl = useMemo(() => {
+    return (
+      (((import.meta as any)?.env?.VITE_SITE_URL as string | undefined) || '').toString().trim() ||
+      (typeof window !== 'undefined' ? window.location.origin : 'https://www.herosiegebuilder.com')
+    );
+  }, []);
+
+  const generateFeedToStorage = async (list: TimelineRow[]) => {
+    setGeneratingFeed(true);
+    setError(null);
+    try {
+      const storage = getStorage();
+      const bucket = (storage.app.options as any)?.storageBucket;
+      if (typeof bucket !== 'string' || !bucket.trim()) {
+        throw new Error('Firebase Storage bucket não configurado (VITE_FIREBASE_STORAGE_BUCKET).');
+      }
+      const feedPath = 'feeds/timeline.xml';
+      const rss = buildRssXml(list, siteBaseUrl);
+      const r = ref(storage, feedPath);
+      await withTimeout(uploadString(r, rss, 'raw', { contentType: 'application/rss+xml; charset=utf-8' as any }), 60000, 'RSS upload timeout');
+      const url = await withTimeout(getDownloadURL(r), 60000, 'RSS URL timeout');
+      setFeedUrl(url);
+      return url;
+    } finally {
+      setGeneratingFeed(false);
+    }
+  };
 
   useEffect(() => {
     const run = async () => {
@@ -73,6 +155,13 @@ export function AdminTimelinePanel() {
         });
         setRows(list);
         setCurrentVersion(latestVersionFromRows(list));
+        try {
+          const cfg = await getDoc(doc(firestore, 'appSettings', 'timeline'));
+          if (cfg.exists()) {
+            const v = cfg.data() as any;
+            if (typeof v?.feedUrl === 'string' && v.feedUrl) setFeedUrl(v.feedUrl);
+          }
+        } catch {}
       } catch (e: any) {
         setError(e?.message || 'Failed to load timeline.');
         setRows([]);
@@ -135,7 +224,12 @@ export function AdminTimelinePanel() {
       setRows(list);
       const latest = latestVersionFromRows(list);
       setCurrentVersion(latest);
-      await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true });
+      try {
+        const url = await generateFeedToStorage(list);
+        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, feedUrl: url, updatedAt: serverTimestamp() }, { merge: true });
+      } catch {
+        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true });
+      }
       setFormOpen(false);
     } catch (e: any) {
       setError(e?.message || 'Failed to save.');
@@ -165,7 +259,12 @@ export function AdminTimelinePanel() {
       setRows(list);
       const latest = latestVersionFromRows(list);
       setCurrentVersion(latest);
-      await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true });
+      try {
+        const url = await generateFeedToStorage(list);
+        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, feedUrl: url, updatedAt: serverTimestamp() }, { merge: true });
+      } catch {
+        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true });
+      }
       setConfirmDelId(null);
     } catch (e: any) {
       setError(e?.message || 'Failed to delete.');
@@ -184,6 +283,14 @@ export function AdminTimelinePanel() {
             <div className="text-xs font-bold text-brand-darker/60">Current: v{currentVersion}</div>
             <button
               type="button"
+              onClick={() => rows && void generateFeedToStorage(rows).catch(() => {})}
+              disabled={!rows || rows.length === 0 || generatingFeed}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+            >
+              {generatingFeed ? 'Generating...' : 'Generate RSS'}
+            </button>
+            <button
+              type="button"
               onClick={openNew}
               className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
             >
@@ -196,6 +303,18 @@ export function AdminTimelinePanel() {
 
       <div className="p-5">
         {error ? <div className="text-xs font-bold text-red-600 mb-3">{error}</div> : null}
+        <div className="text-[11px] text-brand-darker/60 mb-1">
+          URL do seu domínio (via redirect na Hostinger): <a href={rssUrl} className="underline" target="_blank" rel="noreferrer">{rssUrl}</a>
+        </div>
+        {feedUrl ? (
+          <div className="text-[11px] text-brand-darker/60 mb-3">
+            URL real do feed (Firebase Storage): <a href={feedUrl} className="underline" target="_blank" rel="noreferrer">{feedUrl}</a>
+          </div>
+        ) : (
+          <div className="text-[11px] text-brand-darker/60 mb-3">
+            Gere o RSS para obter a URL do Firebase Storage.
+          </div>
+        )}
         {rows === null || loading ? (
           <div className="animate-pulse h-24" />
         ) : (

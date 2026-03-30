@@ -2,7 +2,7 @@ import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image, Timer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { AdminSidebarLink } from '../features/admin/AdminSidebarLink';
 import { AdminSettingsPanel } from '../features/admin/AdminSettingsPanel';
@@ -22,6 +22,17 @@ const isLocalHostAdmin = typeof window !== 'undefined' && /^(localhost|127\.|192
 const adminConfigSuffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHostAdmin ? '_local' : '');
 const INC_TREE_CONFIG_ID = `incarnation_tree${adminConfigSuffix}`;
 const ETHER_TREE_CONFIG_ID = `ether_tree${adminConfigSuffix}`;
+const INC_TREE_NODES_COLL = `incarnation_tree_nodes${adminConfigSuffix}`;
+const INC_TREE_BG_COLL = `incarnation_backgrounds${adminConfigSuffix}`;
+const ETHER_TREE_NODES_COLL = `ether_tree_nodes${adminConfigSuffix}`;
+const ETHER_TREE_BG_COLL = `ether_backgrounds${adminConfigSuffix}`;
+
+const ONLINE_INC_TREE_CONFIG_ID = 'incarnation_tree';
+const ONLINE_ETHER_TREE_CONFIG_ID = 'ether_tree';
+const ONLINE_INC_TREE_NODES_COLL = 'incarnation_tree_nodes';
+const ONLINE_INC_TREE_BG_COLL = 'incarnation_backgrounds';
+const ONLINE_ETHER_TREE_NODES_COLL = 'ether_tree_nodes';
+const ONLINE_ETHER_TREE_BG_COLL = 'ether_backgrounds';
 
 type EtherBgRow = {
   id: string;
@@ -391,7 +402,49 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   ]);
 }
 
+async function replaceCollection(fromColl: string, toColl: string) {
+  const [fromSnap, toSnap] = await Promise.all([getDocs(collection(firestore, fromColl)), getDocs(collection(firestore, toColl))]);
+
+  {
+    let batch = writeBatch(firestore);
+    let count = 0;
+    for (const d of toSnap.docs) {
+      batch.delete(doc(firestore, toColl, d.id));
+      count += 1;
+      if (count >= 400) {
+        await batch.commit();
+        batch = writeBatch(firestore);
+        count = 0;
+      }
+    }
+    if (count > 0) await batch.commit();
+  }
+
+  {
+    let batch = writeBatch(firestore);
+    let count = 0;
+    for (const d of fromSnap.docs) {
+      batch.set(doc(firestore, toColl, d.id), d.data(), { merge: false });
+      count += 1;
+      if (count >= 400) {
+        await batch.commit();
+        batch = writeBatch(firestore);
+        count = 0;
+      }
+    }
+    if (count > 0) await batch.commit();
+  }
+}
+
 function AdminEtherTreePanel() {
+  const defaultViewMode: 'offline' | 'online' = adminConfigSuffix ? 'offline' : 'online';
+  const [viewMode, setViewMode] = useState<'offline' | 'online'>(defaultViewMode);
+  const [importingOnline, setImportingOnline] = useState(false);
+  const [prodConfigLoading, setProdConfigLoading] = useState(false);
+  const [prodSavingConfig, setProdSavingConfig] = useState(false);
+  const [prodMaintenanceEnabled, setProdMaintenanceEnabled] = useState(false);
+  const [prodMaintenanceMessage, setProdMaintenanceMessage] = useState('Page is under maintenance. Please check back soon.');
+
   const [nodes, setNodes] = useState<EtherNodeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -428,11 +481,15 @@ function AdminEtherTreePanel() {
   const [jsonBusy, setJsonBusy] = useState(false);
   const [jsonCopied, setJsonCopied] = useState(false);
 
+  const viewCfgId = viewMode === 'online' ? ONLINE_ETHER_TREE_CONFIG_ID : ETHER_TREE_CONFIG_ID;
+  const viewNodesColl = viewMode === 'online' ? ONLINE_ETHER_TREE_NODES_COLL : ETHER_TREE_NODES_COLL;
+  const viewBgColl = viewMode === 'online' ? ONLINE_ETHER_TREE_BG_COLL : ETHER_TREE_BG_COLL;
+
   useEffect(() => {
     const loadConfig = async () => {
       setConfigLoading(true);
       try {
-        const snap = await getDoc(doc(firestore, 'config', ETHER_TREE_CONFIG_ID));
+        const snap = await getDoc(doc(firestore, 'config', viewCfgId));
         if (snap.exists()) {
           const data = snap.data() as any;
           if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
@@ -447,11 +504,29 @@ function AdminEtherTreePanel() {
       }
     };
     void loadConfig();
+  }, [viewCfgId]);
+
+  useEffect(() => {
+    if (!adminConfigSuffix) return;
+    const loadProd = async () => {
+      setProdConfigLoading(true);
+      try {
+        const snap = await getDoc(doc(firestore, 'config', ONLINE_ETHER_TREE_CONFIG_ID));
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          if (typeof data?.maintenanceEnabled === 'boolean') setProdMaintenanceEnabled(data.maintenanceEnabled);
+          if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setProdMaintenanceMessage(data.maintenanceMessage);
+        }
+      } finally {
+        setProdConfigLoading(false);
+      }
+    };
+    void loadProd();
   }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(
-      collection(firestore, 'ether_tree_nodes'),
+      collection(firestore, viewNodesColl),
       (snap) => {
         const list: EtherNodeRow[] = [];
         snap.forEach((d) => {
@@ -470,11 +545,11 @@ function AdminEtherTreePanel() {
       () => setLoading(false),
     );
     return () => unsub();
-  }, []);
+  }, [viewNodesColl]);
 
   useEffect(() => {
     const unsub = onSnapshot(
-      collection(firestore, 'ether_backgrounds'),
+      collection(firestore, viewBgColl),
       (snap) => {
         const list: EtherBgRow[] = [];
         snap.forEach((d) => {
@@ -498,7 +573,7 @@ function AdminEtherTreePanel() {
       () => setBgLoading(false),
     );
     return () => unsub();
-  }, []);
+  }, [viewBgColl]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -513,6 +588,10 @@ function AdminEtherTreePanel() {
   }, [bgImages, query]);
 
   const openNewNode = () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setEditingNodeId(null);
     setFormNodeId('');
     setFormName('');
@@ -522,6 +601,10 @@ function AdminEtherTreePanel() {
   };
 
   const openEditNode = (n: EtherNodeRow) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setEditingNodeId(n.id);
     setFormNodeId(n.id);
     setFormName(n.name || '');
@@ -531,6 +614,10 @@ function AdminEtherTreePanel() {
   };
 
   const saveNode = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     const nodeId = formNodeId.trim();
     if (!nodeId) {
       setFlash({ type: 'error', text: 'ID do node é obrigatório.' });
@@ -540,7 +627,7 @@ function AdminEtherTreePanel() {
     setFlash(null);
     try {
       await setDoc(
-        doc(firestore, 'ether_tree_nodes', nodeId),
+        doc(firestore, ETHER_TREE_NODES_COLL, nodeId),
         { name: formName, description: formDesc, image: formImage, updatedAt: serverTimestamp() },
         { merge: true },
       );
@@ -554,8 +641,13 @@ function AdminEtherTreePanel() {
   };
 
   const deleteNode = async (id: string) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      setConfirmDeleteNodeId(null);
+      return;
+    }
     try {
-      await deleteDoc(doc(firestore, 'ether_tree_nodes', id));
+      await deleteDoc(doc(firestore, ETHER_TREE_NODES_COLL, id));
       setFlash({ type: 'ok', text: 'Node removido.' });
     } catch {
       setFlash({ type: 'error', text: 'Falha ao remover node.' });
@@ -565,6 +657,10 @@ function AdminEtherTreePanel() {
   };
 
   const saveConfig = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setSavingConfig(true);
     setFlash(null);
     try {
@@ -578,6 +674,52 @@ function AdminEtherTreePanel() {
       setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar configuração.' });
     } finally {
       setSavingConfig(false);
+    }
+  };
+
+  const importOnlineToOffline = async () => {
+    if (!adminConfigSuffix) {
+      setFlash({ type: 'error', text: 'Importação online→offline só faz sentido quando há ambiente offline separado.' });
+      return;
+    }
+    setImportingOnline(true);
+    setFlash(null);
+    try {
+      const cfgSnap = await getDoc(doc(firestore, 'config', ONLINE_ETHER_TREE_CONFIG_ID));
+      if (cfgSnap.exists()) {
+        const data = cfgSnap.data() as any;
+        await setDoc(
+          doc(firestore, 'config', ETHER_TREE_CONFIG_ID),
+          { ...data, updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+      }
+      await replaceCollection(ONLINE_ETHER_TREE_NODES_COLL, ETHER_TREE_NODES_COLL);
+      await replaceCollection(ONLINE_ETHER_TREE_BG_COLL, ETHER_TREE_BG_COLL);
+      setViewMode('offline');
+      setFlash({ type: 'ok', text: 'Dados da online importados para o ambiente offline.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao importar dados da online.' });
+    } finally {
+      setImportingOnline(false);
+    }
+  };
+
+  const saveProdMaintenance = async () => {
+    if (!adminConfigSuffix) return;
+    setProdSavingConfig(true);
+    setFlash(null);
+    try {
+      await setDoc(
+        doc(firestore, 'config', ONLINE_ETHER_TREE_CONFIG_ID),
+        { maintenanceEnabled: prodMaintenanceEnabled, maintenanceMessage: prodMaintenanceMessage.trim(), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setFlash({ type: 'ok', text: 'Maintenance da online atualizado.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar maintenance da online.' });
+    } finally {
+      setProdSavingConfig(false);
     }
   };
 
@@ -614,6 +756,7 @@ function AdminEtherTreePanel() {
   };
 
   const openImportJson = () => {
+    if (viewMode === 'online') setViewMode('offline');
     setJsonCopied(false);
     setJsonText('');
     setJsonModal('import');
@@ -630,6 +773,10 @@ function AdminEtherTreePanel() {
   };
 
   const runImportJson = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Troque para Offline para importar.' });
+      return;
+    }
     setJsonBusy(true);
     setFlash(null);
     try {
@@ -681,7 +828,7 @@ function AdminEtherTreePanel() {
           ...(typeof n?.image === 'string' ? { image: n.image } : {}),
           updatedAt: serverTimestamp(),
         };
-        batch.set(doc(firestore, 'ether_tree_nodes', id), payload, { merge: true });
+        batch.set(doc(firestore, ETHER_TREE_NODES_COLL, id), payload, { merge: true });
         nodeWrites += 1;
         ops += 1;
         if (ops >= 400) await flush();
@@ -710,12 +857,12 @@ function AdminEtherTreePanel() {
         };
 
         if (id) {
-          batch.set(doc(firestore, 'ether_backgrounds', id), payload, { merge: true });
+          batch.set(doc(firestore, ETHER_TREE_BG_COLL, id), payload, { merge: true });
           bgWrites += 1;
           ops += 1;
           if (ops >= 400) await flush();
         } else {
-          await addDoc(collection(firestore, 'ether_backgrounds'), { ...payload, createdAt: serverTimestamp() });
+          await addDoc(collection(firestore, ETHER_TREE_BG_COLL), { ...payload, createdAt: serverTimestamp() });
           bgAdds += 1;
         }
       }
@@ -744,6 +891,10 @@ function AdminEtherTreePanel() {
   };
 
   const editBg = (bg: EtherBgRow) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setEditingBgId(bg.id);
     setBgName(bg.name || '');
     setBgX(String(bg.x));
@@ -754,6 +905,10 @@ function AdminEtherTreePanel() {
   };
 
   const saveBg = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     const x = Number(bgX);
     const y = Number(bgY);
     const w = Number(bgW) || 150;
@@ -770,10 +925,10 @@ function AdminEtherTreePanel() {
     try {
       const payload = { name: bgName.trim(), x, y, image, width: w, height: h, opacity: 1, updatedAt: serverTimestamp() };
       if (editingBgId) {
-        await setDoc(doc(firestore, 'ether_backgrounds', editingBgId), payload, { merge: true });
+        await setDoc(doc(firestore, ETHER_TREE_BG_COLL, editingBgId), payload, { merge: true });
         setFlash({ type: 'ok', text: 'Imagem de fundo atualizada.' });
       } else {
-        await addDoc(collection(firestore, 'ether_backgrounds'), { ...payload, createdAt: serverTimestamp() });
+        await addDoc(collection(firestore, ETHER_TREE_BG_COLL), { ...payload, createdAt: serverTimestamp() });
         setFlash({ type: 'ok', text: 'Imagem de fundo adicionada.' });
       }
       cancelBgEdit();
@@ -785,8 +940,13 @@ function AdminEtherTreePanel() {
   };
 
   const deleteBg = async (id: string) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      setConfirmDeleteBgId(null);
+      return;
+    }
     try {
-      await deleteDoc(doc(firestore, 'ether_backgrounds', id));
+      await deleteDoc(doc(firestore, ETHER_TREE_BG_COLL, id));
       setFlash({ type: 'ok', text: 'Imagem de fundo removida.' });
     } catch {
       setFlash({ type: 'error', text: 'Falha ao remover imagem de fundo.' });
@@ -818,6 +978,40 @@ function AdminEtherTreePanel() {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
+            {adminConfigSuffix ? (
+              <>
+                <div className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Visualizando:</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('offline')}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-widest border ${
+                      viewMode === 'offline' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:bg-brand-bg'
+                    }`}
+                  >
+                    Offline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('online')}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-widest border ${
+                      viewMode === 'online' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:bg-brand-bg'
+                    }`}
+                  >
+                    Online
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void importOnlineToOffline()}
+                  disabled={importingOnline}
+                  className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  {importingOnline ? 'Importando...' : 'Importar Online → Offline'}
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={openExportJson}
@@ -829,6 +1023,7 @@ function AdminEtherTreePanel() {
             <button
               type="button"
               onClick={openImportJson}
+              disabled={viewMode === 'online'}
               className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
             >
               <FileText className="w-4 h-4" />
@@ -853,7 +1048,7 @@ function AdminEtherTreePanel() {
                   const val = e.target.value.replace(/\D/g, '');
                   setMaxPoints(val === '' ? 0 : Number(val));
                 }}
-                disabled={configLoading || infinitePoints}
+                disabled={configLoading || infinitePoints || viewMode === 'online'}
                 className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               />
             </label>
@@ -862,7 +1057,7 @@ function AdminEtherTreePanel() {
               <input
                 type="checkbox"
                 checked={infinitePoints}
-                disabled={configLoading}
+                disabled={configLoading || viewMode === 'online'}
                 onChange={(e) => setInfinitePoints(e.target.checked)}
                 className="accent-brand-orange"
               />
@@ -873,7 +1068,7 @@ function AdminEtherTreePanel() {
               <input
                 type="checkbox"
                 checked={maintenanceEnabled}
-                disabled={configLoading}
+                disabled={configLoading || viewMode === 'online'}
                 onChange={(e) => setMaintenanceEnabled(e.target.checked)}
                 className="accent-brand-orange"
               />
@@ -883,7 +1078,7 @@ function AdminEtherTreePanel() {
             <button
               type="button"
               onClick={() => void saveConfig()}
-              disabled={configLoading || savingConfig}
+              disabled={configLoading || savingConfig || viewMode === 'online'}
               className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
@@ -896,11 +1091,48 @@ function AdminEtherTreePanel() {
             <input
               value={maintenanceMessage}
               onChange={(e) => setMaintenanceMessage(e.target.value)}
-              disabled={configLoading}
+              disabled={configLoading || viewMode === 'online'}
               className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               placeholder="Page is under maintenance. Please check back soon."
             />
           </div>
+
+          {adminConfigSuffix ? (
+            <div className="mt-6 bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Online (Produção)</div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 bg-white border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+                  <input
+                    type="checkbox"
+                    checked={prodMaintenanceEnabled}
+                    disabled={prodConfigLoading || prodSavingConfig}
+                    onChange={(e) => setProdMaintenanceEnabled(e.target.checked)}
+                    className="accent-brand-orange"
+                  />
+                  <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Ocultar Tree (Online)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void saveProdMaintenance()}
+                  disabled={prodConfigLoading || prodSavingConfig}
+                  className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  {prodSavingConfig ? 'Salvando...' : 'Aplicar na Online'}
+                </button>
+              </div>
+              <div className="mt-4">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Mensagem (inglês)</div>
+                <input
+                  value={prodMaintenanceMessage}
+                  onChange={(e) => setProdMaintenanceMessage(e.target.value)}
+                  disabled={prodConfigLoading || prodSavingConfig}
+                  className="mt-2 w-full bg-white border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+                  placeholder="Page is under maintenance. Please check back soon."
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1025,7 +1257,8 @@ function AdminEtherTreePanel() {
             <button
               type="button"
               onClick={openNewNode}
-              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
+              disabled={viewMode === 'online'}
+              className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
             >
               <Plus className="w-4 h-4" />
               Nova Skill Info
@@ -1059,7 +1292,8 @@ function AdminEtherTreePanel() {
                           <button
                             type="button"
                             onClick={() => openEditNode(n)}
-                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker"
+                            disabled={viewMode === 'online'}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker disabled:opacity-60"
                             title="Editar"
                           >
                             <Pencil className="w-4 h-4" />
@@ -1067,7 +1301,8 @@ function AdminEtherTreePanel() {
                           <button
                             type="button"
                             onClick={() => setConfirmDeleteNodeId(n.id)}
-                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600"
+                            disabled={viewMode === 'online'}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600 disabled:opacity-60"
                             title="Excluir"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1258,6 +1493,14 @@ function AdminEtherTreePanel() {
 }
 
 function AdminIncarnationTreePanel() {
+  const defaultViewMode: 'offline' | 'online' = adminConfigSuffix ? 'offline' : 'online';
+  const [viewMode, setViewMode] = useState<'offline' | 'online'>(defaultViewMode);
+  const [importingOnline, setImportingOnline] = useState(false);
+  const [prodConfigLoading, setProdConfigLoading] = useState(false);
+  const [prodSavingConfig, setProdSavingConfig] = useState(false);
+  const [prodMaintenanceEnabled, setProdMaintenanceEnabled] = useState(false);
+  const [prodMaintenanceMessage, setProdMaintenanceMessage] = useState('Page is under maintenance. Please check back soon.');
+
   const [nodes, setNodes] = useState<IncarnationNodeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -1314,11 +1557,15 @@ function AdminIncarnationTreePanel() {
     });
   }, [nodeOptions, nodeMap]);
 
+  const viewCfgId = viewMode === 'online' ? ONLINE_INC_TREE_CONFIG_ID : INC_TREE_CONFIG_ID;
+  const viewNodesColl = viewMode === 'online' ? ONLINE_INC_TREE_NODES_COLL : INC_TREE_NODES_COLL;
+  const viewBgColl = viewMode === 'online' ? ONLINE_INC_TREE_BG_COLL : INC_TREE_BG_COLL;
+
   useEffect(() => {
     const loadConfig = async () => {
       setConfigLoading(true);
       try {
-        const snap = await getDoc(doc(firestore, 'config', INC_TREE_CONFIG_ID));
+        const snap = await getDoc(doc(firestore, 'config', viewCfgId));
         if (snap.exists()) {
           const data = snap.data() as any;
           if (data?.maxPoints !== undefined) setMaxPoints(Number(data.maxPoints) || 0);
@@ -1333,11 +1580,29 @@ function AdminIncarnationTreePanel() {
       }
     };
     void loadConfig();
+  }, [viewCfgId]);
+
+  useEffect(() => {
+    if (!adminConfigSuffix) return;
+    const loadProd = async () => {
+      setProdConfigLoading(true);
+      try {
+        const snap = await getDoc(doc(firestore, 'config', ONLINE_INC_TREE_CONFIG_ID));
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          if (typeof data?.maintenanceEnabled === 'boolean') setProdMaintenanceEnabled(data.maintenanceEnabled);
+          if (typeof data?.maintenanceMessage === 'string' && data.maintenanceMessage.trim()) setProdMaintenanceMessage(data.maintenanceMessage);
+        }
+      } finally {
+        setProdConfigLoading(false);
+      }
+    };
+    void loadProd();
   }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(
-      collection(firestore, 'incarnation_tree_nodes'),
+      collection(firestore, viewNodesColl),
       (snap) => {
         const list: IncarnationNodeRow[] = [];
         snap.forEach((d) => {
@@ -1359,11 +1624,11 @@ function AdminIncarnationTreePanel() {
       () => setLoading(false),
     );
     return () => unsub();
-  }, []);
+  }, [viewNodesColl]);
 
   useEffect(() => {
     const unsub = onSnapshot(
-      collection(firestore, 'incarnation_backgrounds'),
+      collection(firestore, viewBgColl),
       (snap) => {
         const list: IncarnationBgRow[] = [];
         snap.forEach((d) => {
@@ -1387,7 +1652,7 @@ function AdminIncarnationTreePanel() {
       () => setBgLoading(false),
     );
     return () => unsub();
-  }, []);
+  }, [viewBgColl]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1402,6 +1667,10 @@ function AdminIncarnationTreePanel() {
   }, [bgImages, query]);
 
   const openNewNode = useCallback(() => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setEditingNodeId(null);
     setFormNodeId(quickNodeId);
     setFormName('');
@@ -1411,9 +1680,13 @@ function AdminIncarnationTreePanel() {
     setFormSocketJewel(false);
     setFormBlackHole(false);
     setModalOpen(true);
-  }, [quickNodeId]);
+  }, [quickNodeId, viewMode]);
 
   const openEditNode = useCallback((n: IncarnationNodeRow) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setEditingNodeId(n.id);
     setFormNodeId(n.id);
     setFormName(n.name || '');
@@ -1423,9 +1696,13 @@ function AdminIncarnationTreePanel() {
     setFormSocketJewel(!!n.socketJewel);
     setFormBlackHole(!!n.blackHole);
     setModalOpen(true);
-  }, []);
+  }, [viewMode]);
 
   const openQuickNode = useCallback(() => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     const id = quickNodeId.trim();
     if (!id) return;
     const existing = nodeMap.get(id);
@@ -1442,7 +1719,7 @@ function AdminIncarnationTreePanel() {
     setFormSocketJewel(false);
     setFormBlackHole(false);
     setModalOpen(true);
-  }, [nodeMap, openEditNode, quickNodeId]);
+  }, [nodeMap, openEditNode, quickNodeId, viewMode]);
 
   const nodeRows = useMemo(() => {
     return filtered.map((n, idx) => {
@@ -1460,7 +1737,8 @@ function AdminIncarnationTreePanel() {
               <button
                 type="button"
                 onClick={() => openEditNode(n)}
-                className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker"
+                disabled={viewMode === 'online'}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-brand-bg transition-colors text-brand-darker disabled:opacity-60"
                 title="Editar"
               >
                 <Pencil className="w-4 h-4" />
@@ -1468,7 +1746,8 @@ function AdminIncarnationTreePanel() {
               <button
                 type="button"
                 onClick={() => setConfirmDeleteNodeId(n.id)}
-                className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600"
+                disabled={viewMode === 'online'}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-brand-dark/10 hover:bg-red-50 transition-colors text-red-600 disabled:opacity-60"
                 title="Excluir"
               >
                 <Trash2 className="w-4 h-4" />
@@ -1478,9 +1757,13 @@ function AdminIncarnationTreePanel() {
         </tr>
       );
     });
-  }, [filtered, openEditNode]);
+  }, [filtered, openEditNode, viewMode]);
 
   const saveNode = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     const nodeId = formNodeId.trim();
     if (!nodeId) {
       setFlash({ type: 'error', text: 'ID do node é obrigatório.' });
@@ -1495,7 +1778,7 @@ function AdminIncarnationTreePanel() {
     setFlash(null);
     try {
       await setDoc(
-        doc(firestore, 'incarnation_tree_nodes', nodeId),
+        doc(firestore, INC_TREE_NODES_COLL, nodeId),
         {
           name: formName,
           description: formDesc,
@@ -1517,8 +1800,13 @@ function AdminIncarnationTreePanel() {
   };
 
   const deleteNode = async (id: string) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      setConfirmDeleteNodeId(null);
+      return;
+    }
     try {
-      await deleteDoc(doc(firestore, 'incarnation_tree_nodes', id));
+      await deleteDoc(doc(firestore, INC_TREE_NODES_COLL, id));
       setFlash({ type: 'ok', text: 'Node removido.' });
     } catch {
       setFlash({ type: 'error', text: 'Falha ao remover node.' });
@@ -1528,6 +1816,10 @@ function AdminIncarnationTreePanel() {
   };
 
   const saveConfig = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setSavingConfig(true);
     setFlash(null);
     try {
@@ -1548,6 +1840,52 @@ function AdminIncarnationTreePanel() {
       setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar configuração.' });
     } finally {
       setSavingConfig(false);
+    }
+  };
+
+  const importOnlineToOffline = async () => {
+    if (!adminConfigSuffix) {
+      setFlash({ type: 'error', text: 'Importação online→offline só faz sentido quando há ambiente offline separado.' });
+      return;
+    }
+    setImportingOnline(true);
+    setFlash(null);
+    try {
+      const cfgSnap = await getDoc(doc(firestore, 'config', ONLINE_INC_TREE_CONFIG_ID));
+      if (cfgSnap.exists()) {
+        const data = cfgSnap.data() as any;
+        await setDoc(
+          doc(firestore, 'config', INC_TREE_CONFIG_ID),
+          { ...data, updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+      }
+      await replaceCollection(ONLINE_INC_TREE_NODES_COLL, INC_TREE_NODES_COLL);
+      await replaceCollection(ONLINE_INC_TREE_BG_COLL, INC_TREE_BG_COLL);
+      setViewMode('offline');
+      setFlash({ type: 'ok', text: 'Dados da online importados para o ambiente offline.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao importar dados da online.' });
+    } finally {
+      setImportingOnline(false);
+    }
+  };
+
+  const saveProdMaintenance = async () => {
+    if (!adminConfigSuffix) return;
+    setProdSavingConfig(true);
+    setFlash(null);
+    try {
+      await setDoc(
+        doc(firestore, 'config', ONLINE_INC_TREE_CONFIG_ID),
+        { maintenanceEnabled: prodMaintenanceEnabled, maintenanceMessage: prodMaintenanceMessage.trim(), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setFlash({ type: 'ok', text: 'Maintenance da online atualizado.' });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar maintenance da online.' });
+    } finally {
+      setProdSavingConfig(false);
     }
   };
 
@@ -1587,6 +1925,7 @@ function AdminIncarnationTreePanel() {
   };
 
   const openImportJson = () => {
+    if (viewMode === 'online') setViewMode('offline');
     setJsonCopied(false);
     setJsonText('');
     setJsonModal('import');
@@ -1603,6 +1942,10 @@ function AdminIncarnationTreePanel() {
   };
 
   const runImportJson = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Troque para Offline para importar.' });
+      return;
+    }
     setJsonBusy(true);
     setFlash(null);
     try {
@@ -1660,7 +2003,7 @@ function AdminIncarnationTreePanel() {
           ...(typeof blackHole === 'boolean' ? { blackHole } : {}),
           updatedAt: serverTimestamp(),
         };
-        batch.set(doc(firestore, 'incarnation_tree_nodes', id), payload, { merge: true });
+        batch.set(doc(firestore, INC_TREE_NODES_COLL, id), payload, { merge: true });
         nodeWrites += 1;
         ops += 1;
         if (ops >= 400) await flush();
@@ -1689,12 +2032,12 @@ function AdminIncarnationTreePanel() {
         };
 
         if (id) {
-          batch.set(doc(firestore, 'incarnation_backgrounds', id), payload, { merge: true });
+          batch.set(doc(firestore, INC_TREE_BG_COLL, id), payload, { merge: true });
           bgWrites += 1;
           ops += 1;
           if (ops >= 400) await flush();
         } else {
-          await addDoc(collection(firestore, 'incarnation_backgrounds'), { ...payload, createdAt: serverTimestamp() });
+          await addDoc(collection(firestore, INC_TREE_BG_COLL), { ...payload, createdAt: serverTimestamp() });
           bgAdds += 1;
         }
       }
@@ -1723,6 +2066,10 @@ function AdminIncarnationTreePanel() {
   };
 
   const editBg = (bg: IncarnationBgRow) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     setEditingBgId(bg.id);
     setBgName(bg.name || '');
     setBgX(String(bg.x));
@@ -1733,6 +2080,10 @@ function AdminIncarnationTreePanel() {
   };
 
   const saveBg = async () => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      return;
+    }
     const x = Number(bgX);
     const y = Number(bgY);
     const w = Number(bgW) || 150;
@@ -1749,10 +2100,10 @@ function AdminIncarnationTreePanel() {
     try {
       const payload = { name: bgName.trim(), x, y, image, width: w, height: h, opacity: 1, updatedAt: serverTimestamp() };
       if (editingBgId) {
-        await setDoc(doc(firestore, 'incarnation_backgrounds', editingBgId), payload, { merge: true });
+        await setDoc(doc(firestore, INC_TREE_BG_COLL, editingBgId), payload, { merge: true });
         setFlash({ type: 'ok', text: 'Imagem de fundo atualizada.' });
       } else {
-        await addDoc(collection(firestore, 'incarnation_backgrounds'), { ...payload, createdAt: serverTimestamp() });
+        await addDoc(collection(firestore, INC_TREE_BG_COLL), { ...payload, createdAt: serverTimestamp() });
         setFlash({ type: 'ok', text: 'Imagem de fundo adicionada.' });
       }
       cancelBgEdit();
@@ -1764,8 +2115,13 @@ function AdminIncarnationTreePanel() {
   };
 
   const deleteBg = async (id: string) => {
+    if (viewMode === 'online') {
+      setFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline para editar.' });
+      setConfirmDeleteBgId(null);
+      return;
+    }
     try {
-      await deleteDoc(doc(firestore, 'incarnation_backgrounds', id));
+      await deleteDoc(doc(firestore, INC_TREE_BG_COLL, id));
       setFlash({ type: 'ok', text: 'Imagem de fundo removida.' });
     } catch {
       setFlash({ type: 'error', text: 'Falha ao remover imagem de fundo.' });
@@ -1797,6 +2153,40 @@ function AdminIncarnationTreePanel() {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
+            {adminConfigSuffix ? (
+              <>
+                <div className="flex items-center gap-2 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Visualizando:</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('offline')}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-widest border ${
+                      viewMode === 'offline' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:bg-brand-bg'
+                    }`}
+                  >
+                    Offline
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('online')}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-widest border ${
+                      viewMode === 'online' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:bg-brand-bg'
+                    }`}
+                  >
+                    Online
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void importOnlineToOffline()}
+                  disabled={importingOnline}
+                  className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  {importingOnline ? 'Importando...' : 'Importar Online → Offline'}
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={openExportJson}
@@ -1808,6 +2198,7 @@ function AdminIncarnationTreePanel() {
             <button
               type="button"
               onClick={openImportJson}
+              disabled={viewMode === 'online'}
               className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
             >
               <FileText className="w-4 h-4" />
@@ -1832,7 +2223,7 @@ function AdminIncarnationTreePanel() {
                   const val = e.target.value.replace(/\D/g, '');
                   setMaxPoints(val === '' ? 0 : Number(val));
                 }}
-                disabled={configLoading || infinitePoints}
+                disabled={configLoading || infinitePoints || viewMode === 'online'}
                 className="mt-2 w-40 bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               />
             </label>
@@ -1841,7 +2232,7 @@ function AdminIncarnationTreePanel() {
               <input
                 type="checkbox"
                 checked={infinitePoints}
-                disabled={configLoading}
+                disabled={configLoading || viewMode === 'online'}
                 onChange={(e) => setInfinitePoints(e.target.checked)}
                 className="accent-brand-orange"
               />
@@ -1852,7 +2243,7 @@ function AdminIncarnationTreePanel() {
               <input
                 type="checkbox"
                 checked={maintenanceEnabled}
-                disabled={configLoading}
+                disabled={configLoading || viewMode === 'online'}
                 onChange={(e) => setMaintenanceEnabled(e.target.checked)}
                 className="accent-brand-orange"
               />
@@ -1862,7 +2253,7 @@ function AdminIncarnationTreePanel() {
             <button
               type="button"
               onClick={() => void saveConfig()}
-              disabled={configLoading || savingConfig}
+              disabled={configLoading || savingConfig || viewMode === 'online'}
               className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
@@ -1875,11 +2266,48 @@ function AdminIncarnationTreePanel() {
             <input
               value={maintenanceMessage}
               onChange={(e) => setMaintenanceMessage(e.target.value)}
-              disabled={configLoading}
+              disabled={configLoading || viewMode === 'online'}
               className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
               placeholder="Page is under maintenance. Please check back soon."
             />
           </div>
+
+          {adminConfigSuffix ? (
+            <div className="mt-6 bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Online (Produção)</div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 bg-white border border-brand-dark/10 rounded-xl px-3 py-2 select-none">
+                  <input
+                    type="checkbox"
+                    checked={prodMaintenanceEnabled}
+                    disabled={prodConfigLoading || prodSavingConfig}
+                    onChange={(e) => setProdMaintenanceEnabled(e.target.checked)}
+                    className="accent-brand-orange"
+                  />
+                  <span className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Ocultar Tree (Online)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void saveProdMaintenance()}
+                  disabled={prodConfigLoading || prodSavingConfig}
+                  className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  {prodSavingConfig ? 'Salvando...' : 'Aplicar na Online'}
+                </button>
+              </div>
+              <div className="mt-4">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Mensagem (inglês)</div>
+                <input
+                  value={prodMaintenanceMessage}
+                  onChange={(e) => setProdMaintenanceMessage(e.target.value)}
+                  disabled={prodConfigLoading || prodSavingConfig}
+                  className="mt-2 w-full bg-white border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+                  placeholder="Page is under maintenance. Please check back soon."
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1892,33 +2320,33 @@ function AdminIncarnationTreePanel() {
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <label className="md:col-span-2">
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Nome (opcional)</div>
-              <input value={bgName} onChange={(e) => setBgName(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+              <input value={bgName} onChange={(e) => setBgName(e.target.value)} disabled={viewMode === 'online'} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60" />
             </label>
             <label>
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">X</div>
-              <input value={bgX} onChange={(e) => setBgX(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+              <input value={bgX} onChange={(e) => setBgX(e.target.value)} disabled={viewMode === 'online'} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60" />
             </label>
             <label>
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Y</div>
-              <input value={bgY} onChange={(e) => setBgY(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+              <input value={bgY} onChange={(e) => setBgY(e.target.value)} disabled={viewMode === 'online'} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60" />
             </label>
             <label>
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">W</div>
-              <input value={bgW} onChange={(e) => setBgW(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+              <input value={bgW} onChange={(e) => setBgW(e.target.value)} disabled={viewMode === 'online'} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60" />
             </label>
             <label>
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">H</div>
-              <input value={bgH} onChange={(e) => setBgH(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+              <input value={bgH} onChange={(e) => setBgH(e.target.value)} disabled={viewMode === 'online'} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60" />
             </label>
             <label className="md:col-span-4">
               <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">URL da Imagem</div>
-              <input value={bgUrl} onChange={(e) => setBgUrl(e.target.value)} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" placeholder="/images/incarnation/xxx.webp" />
+              <input value={bgUrl} onChange={(e) => setBgUrl(e.target.value)} disabled={viewMode === 'online'} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60" placeholder="/images/incarnation/xxx.webp" />
             </label>
             <div className="md:col-span-2 flex gap-2">
               <button
                 type="button"
                 onClick={() => void saveBg()}
-                disabled={savingBg}
+                disabled={savingBg || viewMode === 'online'}
                 className="flex-1 inline-flex items-center justify-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
               >
                 <Save className="w-4 h-4" />
@@ -2005,7 +2433,8 @@ function AdminIncarnationTreePanel() {
               <button
                 type="button"
                 onClick={openNewNode}
-                className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors"
+                disabled={viewMode === 'online'}
+                className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
               >
                 <Plus className="w-4 h-4" />
                 Nova Skill Info
@@ -2018,7 +2447,8 @@ function AdminIncarnationTreePanel() {
                 <select
                   value={quickNodeId}
                   onChange={(e) => setQuickNodeId(e.target.value)}
-                  className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+                  disabled={viewMode === 'online'}
+                  className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none disabled:opacity-60"
                 >
                   {nodeOptions.map((id) => (
                     <option key={id} value={id}>
@@ -2031,7 +2461,8 @@ function AdminIncarnationTreePanel() {
                 <button
                   type="button"
                   onClick={openQuickNode}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors"
+                  disabled={viewMode === 'online'}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
                 >
                   <Pencil className="w-4 h-4" />
                   Configurar

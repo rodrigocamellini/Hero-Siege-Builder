@@ -13,6 +13,7 @@ type PodiumEntry = { classKey: ClassKey; votes: number };
 type TopBuilder = { uid: string; nick: string; photoURL: string | null; buildCount: number; avgRating: number };
 type MediaItem = { title: string; image: string; link: string };
 type MediaSettings = { site: MediaItem; discord: MediaItem; reddit: MediaItem };
+type MediaSettingsHsb = { discord: MediaItem; twitch: MediaItem };
 type PartnerRow = { id: string; twitchUsername: string; kickUrl: string; displayName: string; avatarUrl: string; exclusive: boolean; order: number };
 
 function isTier(v: unknown): v is Tier {
@@ -144,6 +145,7 @@ export function Sidebar() {
   const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
   const [topBuilders, setTopBuilders] = useState<TopBuilder[] | null>(null);
   const [media, setMedia] = useState<MediaSettings | null>(null);
+  const [mediaHsb, setMediaHsb] = useState<MediaSettingsHsb | null>(null);
   const [partnersList, setPartnersList] = useState<PartnerRow[]>([]);
   const [featuredPartner, setFeaturedPartner] = useState<PartnerRow | null>(null);
   const [featuredPartnerLive, setFeaturedPartnerLive] = useState<boolean | null>(null);
@@ -159,6 +161,18 @@ export function Sidebar() {
       }
     };
     void loadMedia();
+  }, []);
+
+  useEffect(() => {
+    const loadMediaHsb = async () => {
+      try {
+        const snap = await getDoc(doc(firestore, 'appSettings', 'media_hsb'));
+        if (snap.exists()) setMediaHsb(snap.data() as MediaSettingsHsb);
+      } catch (err) {
+        console.error('Error loading media HSB settings:', err);
+      }
+    };
+    void loadMediaHsb();
   }, []);
 
   useEffect(() => {
@@ -431,9 +445,44 @@ export function Sidebar() {
     <aside className="space-y-8">
       <SeasonCountdown t={t} />
 
+      {mediaHsb && (
+        <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
+          <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight">Official Media HSB</h3>
+          <div className="grid grid-cols-2 gap-4">
+            {(['discord', 'twitch'] as const).map((key) => {
+              const item = mediaHsb[key];
+              if (!item) return null;
+              return (
+                <a
+                  key={key}
+                  href={item.link || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-col items-center gap-2 group"
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest text-brand-darker/40 group-hover:text-brand-orange transition-colors">
+                    {item.title}
+                  </span>
+                  <div className="w-full aspect-square bg-brand-bg rounded-xl border border-brand-dark/5 flex items-center justify-center p-2.5 group-hover:border-brand-orange/30 group-hover:bg-brand-orange/5 transition-all shadow-sm">
+                    <img
+                      src={`/images/${item.image}`}
+                      alt={item.title}
+                      className="w-full h-full object-contain pixelated group-hover:scale-110 transition-transform"
+                      onError={(e) => {
+                        e.currentTarget.src = '/images/herosiege.png';
+                      }}
+                    />
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {media && (
         <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
-          <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight">{t.sidebar.officialMedia}</h3>
+          <h3 className="font-heading font-bold text-lg mb-6 uppercase tracking-tight">Official Media PAS</h3>
           <div className="grid grid-cols-3 gap-4">
             {(['site', 'discord', 'reddit'] as const).map((key) => {
               const item = media[key];
@@ -684,7 +733,7 @@ export function Sidebar() {
       <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
         <h3 className="font-heading font-bold text-lg mb-8 uppercase tracking-tight">{t.websiteUpdates}</h3>
         <div className="space-y-6">
-          {(timeline.length > 0 ? timeline : t.updates.map((u, i) => ({ id: String(i), version: '', type: 'change' as const, title: u.title, desc: u.desc, createdAt: null }))).slice(0, 5).map((entry, i) => {
+          {(timeline.length > 0 ? timeline : t.updates.map((u, i) => ({ id: String(i), version: '', type: 'change' as const, title: u.title, desc: u.desc, createdAt: null }))).slice(0, 2).map((entry, i) => {
             const Icon = entry.type === 'fix' ? Wrench : entry.type === 'major' ? Rocket : RefreshCw;
             return (
               <Link to={entry.id ? `/timeline#${encodeURIComponent(entry.id)}` : '/timeline'} key={entry.id || i} className="relative pl-10 group block">

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Crosshair, Search, X } from 'lucide-react';
 import { firestore } from '../../firebase';
-import { rawData, connections, CENTER_ORIGIN, backgroundImages } from '../../../hero-siege-brasil/src/EtherNodesData.js';
+import { rawData, connections, CENTER_ORIGIN, backgroundImages } from '../../data/EtherNodesData';
 
 const NODE_RADIUS = 10;
 const COLOR_ACTIVE = '#00f2ff';
@@ -177,7 +177,13 @@ export function EtherTree() {
   };
 
   useEffect(() => {
-    const unsubNodes = onSnapshot(collection(firestore, 'ether_tree_nodes'), (snap) => {
+    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
+    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
+    const nodesColl = `ether_tree_nodes${suffix}`;
+    const bgColl = `ether_backgrounds${suffix}`;
+    const cfgId = `ether_tree${suffix}`;
+
+    const unsubNodes = onSnapshot(collection(firestore, nodesColl), (snap) => {
       const data: Record<string, FirestoreNodeData> = {};
       snap.forEach((d) => {
         data[d.id] = d.data() as FirestoreNodeData;
@@ -185,7 +191,7 @@ export function EtherTree() {
       setNodeData(data);
     });
 
-    const unsubBg = onSnapshot(collection(firestore, 'ether_backgrounds'), (snap) => {
+    const unsubBg = onSnapshot(collection(firestore, bgColl), (snap) => {
       const list: BgImage[] = [];
       snap.forEach((d) => {
         const data = d.data() as Partial<BgImage>;
@@ -195,9 +201,6 @@ export function EtherTree() {
       setBgImages(list);
     });
 
-    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
-    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
-    const cfgId = `ether_tree${suffix}`;
     const unsubConfig = onSnapshot(
       doc(firestore, 'config', cfgId),
       (snap) => {
