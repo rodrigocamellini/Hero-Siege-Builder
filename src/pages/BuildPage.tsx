@@ -13,7 +13,6 @@ import { classNames, type ClassKey } from '../data/tierlist';
 import { firestore } from '../firebase';
 import { useAuth } from '../features/auth/AuthProvider';
 import { translations } from '../i18n/translations';
-import relicMap from '../../hero-siege-brasil/src/relicsMap.json';
 import { CHARM_DB } from '../data/charmDb';
 import { EXTRA_SHIELDS } from '../data/extraShields';
 
@@ -211,11 +210,13 @@ function normalizeImageUrl(path: unknown) {
 function getRelicImageSrc(name: string) {
   const cleanName = String(name ?? '').trim();
   if (!cleanName) return '';
-  const map = relicMap as Record<string, string>;
-  if (map[cleanName]) return `/images/reliquias/${map[cleanName]}`;
-  const lower = cleanName.toLowerCase();
-  if (map[lower]) return `/images/reliquias/${map[lower]}`;
-  return '';
+  const base = cleanName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_!'()\-\.,]/g, '');
+  const filename = `Relics_${base}.png`;
+  return `/images/reliquias/${filename}`;
 }
 
 function AttributePentagramIcon({ color }: { color: string }) {

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Crosshair, Search, X } from 'lucide-react';
 import { firestore } from '../../firebase';
-import { rawData, connections, CENTER_ORIGIN, backgroundImages } from '../../data/EtherNodesData';
+import { rawData as staticRawData, connections as staticConnections, CENTER_ORIGIN as staticCenterOrigin, backgroundImages as staticBackgroundImages } from '../../data/EtherNodesData';
 
 const NODE_RADIUS = 10;
 const COLOR_ACTIVE = '#00f2ff';
@@ -106,7 +106,6 @@ export function EtherTree() {
   const [bgImages, setBgImages] = useState<BgImage[]>([]);
   const [hoveredNode, setHoveredNode] = useState<number | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
-  const [showActivateAllModal, setShowActivateAllModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [generatedLink, setGeneratedLink] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
@@ -128,6 +127,44 @@ export function EtherTree() {
     x: typeof window !== 'undefined' ? window.innerWidth / 2 : 0,
     y: typeof window !== 'undefined' ? window.innerHeight / 2 : 0,
   }));
+
+  const [layoutDoc, setLayoutDoc] = useState<{
+    rawData?: Array<{ x: number; y: number; name?: string; description?: string }>;
+    connections?: Array<{ from: number; to: number }>;
+    CENTER_ORIGIN?: { x: number; y: number };
+  } | null>(null);
+
+  const { rawData, connections, CENTER_ORIGIN, backgroundImages, layoutMissing } = useMemo(() => {
+    const docRaw = Array.isArray(layoutDoc?.rawData) ? layoutDoc!.rawData! : null;
+    const docConn = Array.isArray(layoutDoc?.connections) ? layoutDoc!.connections! : null;
+    const docCenter =
+      layoutDoc?.CENTER_ORIGIN && typeof layoutDoc.CENTER_ORIGIN.x === 'number' && typeof layoutDoc.CENTER_ORIGIN.y === 'number'
+        ? layoutDoc.CENTER_ORIGIN
+        : null;
+
+    if (docRaw && docConn && docRaw.length > 1 && docConn.length > 0) {
+      return { rawData: docRaw, connections: docConn, CENTER_ORIGIN: docCenter ?? staticCenterOrigin, backgroundImages: staticBackgroundImages, layoutMissing: false };
+    }
+
+    const looksValid =
+      Array.isArray(staticRawData) &&
+      staticRawData.length > 1 &&
+      Array.isArray(staticConnections) &&
+      staticConnections.length > 0 &&
+      staticRawData.every((n) => typeof (n as any)?.x === 'number' && typeof (n as any)?.y === 'number');
+
+    if (looksValid) {
+      return { rawData: staticRawData, connections: staticConnections, CENTER_ORIGIN: staticCenterOrigin, backgroundImages: staticBackgroundImages, layoutMissing: false };
+    }
+
+    return {
+      rawData: [{ x: 0, y: 0, name: 'Ether Core', description: '' }],
+      connections: [],
+      CENTER_ORIGIN: { x: 0, y: 0 },
+      backgroundImages: staticBackgroundImages,
+      layoutMissing: true,
+    };
+  }, [layoutDoc]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -154,7 +191,7 @@ export function EtherTree() {
       }
     });
     return adj;
-  }, []);
+  }, [connections, rawData.length]);
 
   const checkFullConnectivity = (nodeSet: Set<number>) => {
     if (!nodeSet.has(0)) return false;
@@ -177,6 +214,26 @@ export function EtherTree() {
   };
 
   useEffect(() => {
+    const unsubLayout = onSnapshot(
+      doc(firestore, 'config', 'ether_tree_layout'),
+      (snap) => {
+        if (!snap.exists()) {
+          setLayoutDoc(null);
+          return;
+        }
+        const d = snap.data() as any;
+        const rd = Array.isArray(d?.rawData) ? d.rawData : null;
+        const cc = Array.isArray(d?.connections) ? d.connections : null;
+        const co = d?.CENTER_ORIGIN;
+        setLayoutDoc({
+          rawData: rd || undefined,
+          connections: cc || undefined,
+          CENTER_ORIGIN: co && typeof co?.x === 'number' && typeof co?.y === 'number' ? co : undefined,
+        });
+      },
+      () => setLayoutDoc(null),
+    );
+
     const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
     const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
     const nodesColl = `ether_tree_nodes${suffix}`;
@@ -218,6 +275,7 @@ export function EtherTree() {
       unsubNodes();
       unsubBg();
       unsubConfig();
+      unsubLayout();
     };
   }, []);
 
@@ -420,14 +478,31 @@ export function EtherTree() {
     setIsGrabbing(false);
   };
 
-  return maintenanceEnabled ? (
-    <div className="w-full h-full flex items-center justify-center bg-brand-bg px-4 py-10">
-      <div className="w-full max-w-2xl bg-white border border-brand-dark/10 rounded-2xl p-8 text-center">
-        <div className="font-heading font-bold text-2xl md:text-3xl uppercase tracking-tight text-brand-darker">Ether Tree</div>
-        <div className="mt-3 text-sm text-brand-darker/70">{maintenanceMessage}</div>
+  if (maintenanceEnabled) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-brand-bg px-4 py-10">
+        <div className="w-full max-w-2xl bg-white border border-brand-dark/10 rounded-2xl p-8 text-center">
+          <div className="font-heading font-bold text-2xl md:text-3xl uppercase tracking-tight text-brand-darker">Ether Tree</div>
+          <div className="mt-3 text-sm text-brand-darker/70">{maintenanceMessage}</div>
+        </div>
       </div>
-    </div>
-  ) : (
+    );
+  }
+
+  if (layoutMissing) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-brand-bg px-4 py-10">
+        <div className="w-full max-w-2xl bg-white border border-brand-dark/10 rounded-2xl p-8 text-center">
+          <div className="font-heading font-bold text-2xl md:text-3xl uppercase tracking-tight text-brand-darker">Ether Tree</div>
+          <div className="mt-3 text-sm text-brand-darker/70">
+            Layout da árvore não configurado. Abra o Admin → Settings → Ether Layout e cole o JSON do layout (rawData, connections e CENTER_ORIGIN).
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
     <div
       className={`w-full h-full bg-[#020205] overflow-hidden relative select-none ${isGrabbing ? 'cursor-grabbing' : 'cursor-grab'}`}
       onWheel={handleWheel}
@@ -606,13 +681,6 @@ export function EtherTree() {
         </button>
         <button
           type="button"
-          onClick={() => setShowActivateAllModal(true)}
-          className="px-4 py-1.5 rounded-full border border-green-500/50 text-green-400 hover:bg-green-500 hover:text-white transition text-xs font-bold uppercase tracking-wider"
-        >
-          Activate All
-        </button>
-        <button
-          type="button"
           onClick={handleGenerateLink}
           className="px-4 py-1.5 rounded-full border border-yellow-500/50 text-yellow-400 hover:bg-yellow-500 hover:text-white transition text-xs font-bold uppercase tracking-wider"
         >
@@ -661,35 +729,6 @@ export function EtherTree() {
         </div>
       ) : null}
 
-      {showActivateAllModal ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#050510] border-2 border-green-500 p-8 rounded-xl max-w-sm w-full text-center shadow-[0_0_50px_rgba(34,197,94,0.3)]">
-            <h2 className="text-2xl font-bold text-green-500 mb-4 uppercase tracking-widest">Activate All?</h2>
-            <p className="text-gray-300 mb-8 leading-relaxed">
-              This will activate <span className="text-green-400 font-bold">all nodes</span> instantly.
-            </p>
-            <div className="flex justify-center gap-4">
-              <button
-                type="button"
-                onClick={() => setShowActivateAllModal(false)}
-                className="px-6 py-2 rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-800 transition font-bold uppercase tracking-wide"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveNodes(new Set((rawData as any[]).map((_, i) => i)));
-                  setShowActivateAllModal(false);
-                }}
-                className="px-6 py-2 rounded-lg bg-green-500/10 border border-green-500 text-green-500 hover:bg-green-500 hover:text-white transition font-bold uppercase tracking-wide shadow-[0_0_15px_rgba(34,197,94,0.3)]"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {showShareModal ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -771,14 +810,19 @@ export function EtherTree() {
           const isActive = activeNodes.has(idx);
           const isCore = idx === 0;
           const degree = (adjacencyList[idx] ?? []).length;
-          const isLeaf = (degree === 1 && !isCore) || idx === 282;
+          const LEAF_EXCEPTIONS = new Set([17, 18]);
+          const isLeaf = degree === 1 && !isCore && !LEAF_EXCEPTIONS.has(idx);
 
           const dbData = nodeData[String(idx)] ?? {};
           const name = (typeof dbData.name === 'string' ? dbData.name : node.name) ?? '';
           const desc = (typeof dbData.description === 'string' ? dbData.description : node.description) ?? '';
 
           const st = searchTerm.trim().toLowerCase();
-          const isMatch = st.length >= 2 && (name.toLowerCase().includes(st) || desc.toLowerCase().includes(st));
+          const idRaw = searchTerm.trim();
+          const idMatchVal = /^#?\d+$/.test(idRaw) ? Number(idRaw.replace('#', '')) : null;
+          const textMatch = st.length >= 2 && (name.toLowerCase().includes(st) || desc.toLowerCase().includes(st));
+          const idMatch = idMatchVal !== null && idMatchVal === idx;
+          const isMatch = textMatch || idMatch;
 
           const isBlackHole = !!dbData.blackHole;
 
@@ -812,9 +856,9 @@ export function EtherTree() {
                 width: nodeSize,
                 height: nodeSize,
                 transform: 'translate(-50%, -50%)',
-                backgroundColor: nodeImage ? 'transparent' : isCore ? COLOR_CORE : isActive ? COLOR_ACTIVE : COLOR_INACTIVE,
+                backgroundColor: nodeImage ? 'transparent' : isActive ? COLOR_ACTIVE : COLOR_INACTIVE,
                 boxShadow: isMatch ? `0 0 4px ${COLOR_ACTIVE}` : 'none',
-                border: nodeImage ? 'none' : isActive ? '2px solid white' : `1px solid ${COLOR_ACTIVE}33`,
+                border: 'none',
                 zIndex: isMatch ? 100 : isActive || isLeaf ? 10 : 1,
                 cursor: 'pointer',
                 animation: isMatch ? 'search-pulse 1.5s infinite ease-in-out' : 'none',
@@ -831,6 +875,9 @@ export function EtherTree() {
                   src={nodeImage}
                   alt="Node"
                   className={`w-full h-full object-contain ${isActive ? '' : 'opacity-80 grayscale'}`}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
                 />
               ) : null}
 

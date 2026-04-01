@@ -56,6 +56,9 @@ export function AdminSettingsPanel() {
   const [socialLinks, setSocialLinks] = useState({ twitch: '', instagram: '', youtube: '' });
   const [socialSaving, setSocialSaving] = useState(false);
   const [socialSavedOk, setSocialSavedOk] = useState(false);
+  const [etherLayoutJson, setEtherLayoutJson] = useState('');
+  const [etherLayoutSaving, setEtherLayoutSaving] = useState(false);
+  const [etherLayoutSavedOk, setEtherLayoutSavedOk] = useState(false);
 
   const [brandLogos, setBrandLogos] = useState({ headerLogoUrl: '', footerLogoUrl: '', headerLogoHeightPx: 48, footerLogoHeightPx: 48 });
   const [brandSaving, setBrandSaving] = useState(false);
@@ -122,6 +125,13 @@ export function AdminSettingsPanel() {
             instagram: typeof d?.instagram === 'string' ? d.instagram : '',
             youtube: typeof d?.youtube === 'string' ? d.youtube : '',
           });
+        }
+
+        const etherLayoutSnap = await getDoc(doc(firestore, 'config', 'ether_tree_layout'));
+        if (etherLayoutSnap.exists()) {
+          setEtherLayoutJson(JSON.stringify(etherLayoutSnap.data(), null, 2));
+        } else {
+          setEtherLayoutJson(JSON.stringify({ rawData: [], connections: [], CENTER_ORIGIN: { x: 0, y: 0 } }, null, 2));
         }
 
         const brandingSnap = await getDoc(doc(firestore, 'appSettings', 'branding'));
@@ -289,6 +299,32 @@ export function AdminSettingsPanel() {
       setError(firestoreErrorMessage(err));
     } finally {
       setSocialSaving(false);
+    }
+  }
+
+  async function saveEtherLayout() {
+    setError(null);
+    setEtherLayoutSavedOk(false);
+    setEtherLayoutSaving(true);
+    try {
+      let parsed: any;
+      try {
+        parsed = JSON.parse(etherLayoutJson);
+      } catch {
+        throw new FirebaseError('invalid-json', 'JSON inválido. Corrija o conteúdo antes de salvar.');
+      }
+      const rd = Array.isArray(parsed?.rawData) ? parsed.rawData : [];
+      const cc = Array.isArray(parsed?.connections) ? parsed.connections : [];
+      const co =
+        parsed?.CENTER_ORIGIN && typeof parsed.CENTER_ORIGIN.x === 'number' && typeof parsed.CENTER_ORIGIN.y === 'number'
+          ? parsed.CENTER_ORIGIN
+          : { x: 0, y: 0 };
+      await setDoc(doc(firestore, 'config', 'ether_tree_layout'), { rawData: rd, connections: cc, CENTER_ORIGIN: co, updatedAt: serverTimestamp() }, { merge: true });
+      setEtherLayoutSavedOk(true);
+    } catch (err) {
+      setError(firestoreErrorMessage(err));
+    } finally {
+      setEtherLayoutSaving(false);
     }
   }
 
@@ -863,6 +899,40 @@ export function AdminSettingsPanel() {
           </div>
 
           {socialSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Links do rodapé atualizados.</div> : null}
+        </div>
+      </div>
+
+      <div className="px-6 pb-6">
+        <div className="bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/60">Ether Layout</div>
+              <div className="text-sm font-bold text-brand-darker">Coordenadas e conexões da árvore Ether</div>
+              <div className="text-xs text-brand-darker/60">Cole um JSON com rawData, connections e CENTER_ORIGIN.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void saveEtherLayout()}
+              disabled={loading || etherLayoutSaving}
+              className="bg-brand-dark text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+            >
+              {etherLayoutSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+
+          <div className="mt-4">
+            <textarea
+              value={etherLayoutJson}
+              onChange={(e) => {
+                setEtherLayoutSavedOk(false);
+                setEtherLayoutJson(e.target.value);
+              }}
+              className="w-full bg-white border border-brand-dark/10 rounded-xl p-3 text-xs font-mono text-brand-darker outline-none min-h-72"
+              placeholder='{"rawData":[{"x":0,"y":0,"name":"Ether Core"}], "connections":[{"from":0,"to":1}], "CENTER_ORIGIN":{"x":0,"y":0}}'
+            />
+          </div>
+
+          {etherLayoutSavedOk ? <div className="mt-3 text-xs font-bold text-emerald-600">Layout da Ether atualizado.</div> : null}
         </div>
       </div>
 

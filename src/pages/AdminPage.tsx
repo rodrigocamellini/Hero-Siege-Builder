@@ -2682,6 +2682,7 @@ type TeamMember = {
   nick: string;
   name?: string;
   role?: string;
+  order?: number;
   photo?: string;
   description?: string;
   socials?: Partial<{ discord: string; twitch: string; youtube: string; site: string; github: string }>;
@@ -3090,6 +3091,7 @@ function AdminTeamPanel() {
   const [nick, setNick] = useState('');
   const [realName, setRealName] = useState('');
   const [role, setRole] = useState('common');
+  const [order, setOrder] = useState<number>(0);
   const [photo, setPhoto] = useState('');
   const [desc, setDesc] = useState('');
   const [discord, setDiscord] = useState('');
@@ -3113,12 +3115,30 @@ function AdminTeamPanel() {
             nick: data?.nick ?? '',
             name: data?.name ?? '',
             role: data?.role ?? '',
+            order: typeof data?.order === 'number' ? data.order : Number(data?.order) || 0,
             photo: data?.photo ?? '',
             description: data?.description ?? '',
             socials: typeof data?.socials === 'object' ? data.socials : undefined,
           });
         });
-        list.sort((a, b) => (a.nick || '').localeCompare(b.nick || ''));
+        const roleRank: Record<string, number> = {
+          'legendary admin-main': 0,
+          angelic: 1,
+          satanic: 2,
+          mythic: 3,
+          common: 4,
+          heroic: 5,
+          set: 6,
+        };
+        list.sort((a, b) => {
+          const ra = roleRank[a.role || 'common'] ?? 999;
+          const rb = roleRank[b.role || 'common'] ?? 999;
+          if (ra !== rb) return ra - rb;
+          const oa = typeof a.order === 'number' ? a.order : 0;
+          const ob = typeof b.order === 'number' ? b.order : 0;
+          if (oa !== ob) return oa - ob;
+          return (a.nick || '').localeCompare(b.nick || '');
+        });
         setMembers(list);
         setLoading(false);
       },
@@ -3147,6 +3167,7 @@ function AdminTeamPanel() {
     setNick('');
     setRealName('');
     setRole('common');
+    setOrder(0);
     setPhoto('');
     setDesc('');
     setDiscord('');
@@ -3163,6 +3184,7 @@ function AdminTeamPanel() {
     setNick(m.nick || '');
     setRealName(m.name || '');
     setRole(m.role || 'common');
+    setOrder(typeof m.order === 'number' ? m.order : 0);
     setPhoto(m.photo || '');
     setDesc(m.description || '');
     setDiscord(m.socials?.discord || '');
@@ -3185,6 +3207,7 @@ function AdminTeamPanel() {
         nick: nick.trim(),
         name: realName.trim(),
         role,
+        order: Number(order) || 0,
         photo: photo.trim(),
         description: desc,
         socials: {
@@ -3260,6 +3283,7 @@ function AdminTeamPanel() {
                 <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-40">Nick</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Nome</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-40">Função</th>
+                <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-20">Ordem</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60">Descrição</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-widest text-brand-darker/60 w-28">Ações</th>
               </tr>
@@ -3279,6 +3303,7 @@ function AdminTeamPanel() {
                   <td className="px-3 py-2 text-brand-darker/80">
                     {ROLES.find((r) => r.value === m.role)?.label || m.role || '-'}
                   </td>
+                  <td className="px-3 py-2 font-mono font-bold text-brand-darker/70">{typeof m.order === 'number' ? m.order : 0}</td>
                   <td className="px-3 py-2 text-brand-darker/70 max-w-[520px] truncate">{m.description || '-'}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
@@ -3304,7 +3329,7 @@ function AdminTeamPanel() {
               ))}
               {filtered.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-brand-darker/50 font-bold">
+                  <td colSpan={7} className="px-3 py-6 text-center text-brand-darker/50 font-bold">
                     Nenhum membro encontrado.
                   </td>
                 </tr>
@@ -3339,6 +3364,18 @@ function AdminTeamPanel() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="block">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Ordem (na categoria)</div>
+            <input
+              value={String(order)}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^\d-]/g, '');
+                setOrder(v === '' ? 0 : Number(v));
+              }}
+              className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+              placeholder="0"
+            />
           </label>
           <label className="block">
             <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Descrição</div>

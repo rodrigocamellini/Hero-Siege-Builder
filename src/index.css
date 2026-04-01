@@ -169,6 +169,55 @@
   gap: 40px;
 }
 
+.team-role-divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.team-role-divider-label {
+  font-family: 'Orbitron', ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--clr);
+  text-shadow: 0 0 14px rgba(var(--clr-rgb), 0.55);
+  padding: 6px 10px;
+  border: 1px solid rgba(var(--clr-rgb), 0.35);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.team-role-divider-bar {
+  height: 2px;
+  flex: 1 1 auto;
+  background: linear-gradient(90deg, rgba(var(--clr-rgb), 0.0), rgba(var(--clr-rgb), 0.9), rgba(var(--clr-rgb), 0.0));
+  box-shadow: 0 0 18px rgba(var(--clr-rgb), 0.65);
+  border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+}
+
+.team-role-divider-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(var(--clr-rgb), 0.55), transparent);
+  transform: translateX(-120%);
+  animation: team-divider-scan 3.4s linear infinite;
+}
+
+@keyframes team-divider-scan {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
 .colaboradores-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -176,11 +225,21 @@
   width: 100%;
 }
 
+.team-single-center {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.team-single-center > .cyber-card {
+  width: calc(50% - 10px);
+}
+
 .cyber-card {
   background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 25px;
+  padding: 20px;
   position: relative;
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
   overflow: hidden;
@@ -251,7 +310,7 @@
 }
 
 .admin-main {
-  max-width: 600px;
+  max-width: 100%;
 }
 
 .profile-header {
@@ -280,8 +339,8 @@
 }
 
 .admin-img {
-  width: 120px;
-  height: 120px;
+  width: 96px;
+  height: 96px;
 }
 
 .name-box h2,
@@ -293,7 +352,7 @@
 }
 
 .admin-name h2 {
-  font-size: 2rem;
+  font-size: 1.6rem;
 }
 
 .tier-label {
@@ -363,5 +422,8 @@
 @media (max-width: 768px) {
   .colaboradores-grid {
     grid-template-columns: 1fr;
+  }
+  .team-single-center > .cyber-card {
+    width: 100%;
   }
 }

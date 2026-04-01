@@ -17,6 +17,7 @@ type Member = {
   nick: string;
   name?: string;
   role?: string;
+  order?: number;
   photo?: string;
   description?: string;
   socials?: Socials;
@@ -53,6 +54,7 @@ export function TeamPage() {
             nick: data?.nick ?? '',
             name: data?.name ?? '',
             role: data?.role ?? '',
+            order: typeof data?.order === 'number' ? data.order : Number(data?.order) || 0,
             photo: data?.photo ?? '',
             description: data?.description ?? '',
             socials: typeof data?.socials === 'object' ? data.socials : undefined,
@@ -66,11 +68,59 @@ export function TeamPage() {
     void load();
   }, []);
 
-  const { developers, others } = useMemo(() => {
-    const dev = members.filter((m) => m.role === 'legendary admin-main');
-    const oth = members.filter((m) => m.role !== 'legendary admin-main');
-    return { developers: dev, others: oth };
+  const sections = useMemo(() => {
+    const normalizeRole = (raw: string | undefined) => {
+      const r = (raw || '').trim();
+      if (!r) return 'common';
+      if (r === 'legendary admin-main' || r === 'angelic' || r === 'satanic' || r === 'mythic' || r === 'common' || r === 'heroic' || r === 'set') return r;
+      if (r === 'Desenvolvedor' || r === 'Developer') return 'legendary admin-main';
+      if (r === 'Moderador' || r === 'Moderator') return 'angelic';
+      if (r === 'Colaborador' || r === 'Contributor') return 'satanic';
+      if (r === 'Editor') return 'mythic';
+      if (r === 'Suporte' || r === 'Support') return 'common';
+      if (r === 'Parceiro' || r === 'Partner') return 'heroic';
+      if (r === 'Designer' || r === 'Design') return 'set';
+      return 'common';
+    };
+
+    const roleOrder: Array<{ id: string; title: string; css: string }> = [
+      { id: 'legendary admin-main', title: 'Developer', css: 'legendary' },
+      { id: 'angelic', title: 'Moderador', css: 'angelic' },
+      { id: 'satanic', title: 'Contribuidor', css: 'satanic' },
+      { id: 'mythic', title: 'Editor', css: 'mythic' },
+      { id: 'common', title: 'Support', css: 'common' },
+      { id: 'heroic', title: 'Partner', css: 'heroic' },
+      { id: 'set', title: 'Design', css: 'set' },
+    ];
+
+    const byRole = new Map<string, Member[]>();
+    for (const m of members) {
+      const role = normalizeRole(m.role);
+      const list = byRole.get(role) || [];
+      list.push({ ...m, role });
+      byRole.set(role, list);
+    }
+
+    const sortMembers = (a: Member, b: Member) => {
+      const oa = typeof a.order === 'number' ? a.order : 0;
+      const ob = typeof b.order === 'number' ? b.order : 0;
+      if (oa !== ob) return oa - ob;
+      return (a.nick || '').localeCompare(b.nick || '');
+    };
+
+    return roleOrder
+      .map((r) => ({ title: r.title, css: r.css, members: (byRole.get(r.id) || []).sort(sortMembers) }))
+      .filter((s) => s.members.length > 0);
   }, [members]);
+
+  const renderDivider = (title: string, cssClass: string) => {
+    return (
+      <div className={`team-role-divider ${cssClass}`}>
+        <div className="team-role-divider-label">{title}</div>
+        <div className="team-role-divider-bar" />
+      </div>
+    );
+  };
 
   const renderSocials = (socials: Socials | undefined) => {
     if (!socials) return null;
@@ -121,59 +171,41 @@ export function TeamPage() {
               </div>
             ) : (
               <div className="equipe-main-layout">
-                {developers.map((dev) => (
-                  <div key={dev.id} className={`cyber-card ${dev.role || 'legendary admin-main'}`}>
-                    <span className="tier-label">— {ROLE_LABEL[dev.role ?? ''] ?? 'Developer'}</span>
-                    <div className="profile-header">
-                      <div className="img-frame admin-img">
-                        <img
-                          src={dev.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(dev.nick)}`}
-                          alt={dev.nick}
-                        />
-                      </div>
-                      <div className="name-box admin-name">
-                        <div>
-                          <h2>{dev.nick}</h2>
-                        </div>
-                        {dev.name ? (
-                          <div>
-                            <h3>{dev.name}</h3>
+                {sections.map((section) => (
+                  <div key={section.title} className="w-full">
+                    {renderDivider(section.title, section.css)}
+                    <div className={section.title === 'Developer' && section.members.length === 1 ? 'mt-6 team-single-center' : 'mt-6 colaboradores-grid'}>
+                      {section.members.map((m) => (
+                        <div
+                          key={m.id}
+                          className={`cyber-card ${m.role || 'common'}`}
+                        >
+                          <span className="tier-label">— {ROLE_LABEL[m.role ?? ''] ?? (section.title || 'Member')}</span>
+                          <div className="profile-header">
+                            <div className="img-frame admin-img">
+                              <img
+                                src={m.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(m.nick)}`}
+                                alt={m.nick}
+                              />
+                            </div>
+                            <div className="name-box admin-name">
+                              <div>
+                                <h2>{m.nick}</h2>
+                              </div>
+                              {m.name ? (
+                                <div>
+                                  <h3>{m.name}</h3>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
-                        ) : null}
-                      </div>
+                          <div className="inner-box">{m.description || (m.role === 'legendary admin-main' ? 'Desenvolvedor do projeto Hero Siege Builder.' : 'Colaborador do projeto Hero Siege Builder.')}</div>
+                          {renderSocials(m.socials)}
+                        </div>
+                      ))}
                     </div>
-                    <div className="inner-box">{dev.description || 'Desenvolvedor do projeto Hero Siege Builder.'}</div>
-                    {renderSocials(dev.socials)}
                   </div>
                 ))}
-
-                <div className="colaboradores-grid">
-                  {others.map((m) => (
-                    <div key={m.id} className={`cyber-card ${m.role || 'common'}`}>
-                      <span className="tier-label">— {ROLE_LABEL[m.role ?? ''] ?? 'Member'}</span>
-                      <div className="profile-header">
-                        <div className="img-frame">
-                          <img
-                            src={m.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(m.nick)}`}
-                            alt={m.nick}
-                          />
-                        </div>
-                        <div className="name-box">
-                          <div>
-                            <h2>{m.nick}</h2>
-                          </div>
-                          {m.name ? (
-                            <div>
-                              <h3>{m.name}</h3>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="inner-box">{m.description || 'Colaborador do projeto Hero Siege Builder.'}</div>
-                      {renderSocials(m.socials)}
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </div>

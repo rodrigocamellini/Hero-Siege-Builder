@@ -33,7 +33,6 @@ import { Modal } from './components/Modal';
 import { Sidebar } from './components/Sidebar';
 import { translations } from './i18n/translations';
 import { firestore } from './firebase';
-import relicMap from '../hero-siege-brasil/src/relicsMap.json';
 
 type ClassFilter = 'ALL' | 'MELEE' | 'RANGED' | 'MAGIC';
 type ClassCategory = Exclude<ClassFilter, 'ALL'>;
@@ -2808,11 +2807,13 @@ const otherRelics: ExtraRelic[] = [
 function getRelicImageSrc(name: string) {
   const cleanName = String(name ?? '').trim();
   if (!cleanName) return '';
-  const map = relicMap as Record<string, string>;
-  if (map[cleanName]) return `/images/reliquias/${map[cleanName]}`;
-  const lower = cleanName.toLowerCase();
-  if (map[lower]) return `/images/reliquias/${map[lower]}`;
-  return '';
+  const base = cleanName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_!'()\-\.,]/g, '');
+  const filename = `Relics_${base}.png`;
+  return `/images/reliquias/${filename}`;
 }
 
 function handleRelicError(e: SyntheticEvent<HTMLImageElement>) {
