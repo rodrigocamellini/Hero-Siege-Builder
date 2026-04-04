@@ -829,7 +829,10 @@ export function EtherTree() {
           let nodeSize = NODE_RADIUS * 2;
           let nodeImage: string | null = null;
 
-          if (isLeaf) {
+          if (idx === 282) {
+            nodeSize = NODE_RADIUS * 5;
+            nodeImage = '/images/bestnode.webp';
+          } else if (isLeaf) {
             nodeSize = NODE_RADIUS * 5;
             nodeImage = '/images/bestnode.webp';
           } else if (isCore) {

@@ -1,6 +1,6 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image, Timer } from 'lucide-react';
+import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image, Timer, Gift } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
@@ -12,6 +12,7 @@ import { AdminBannerPanel } from '../features/admin/AdminBannerPanel';
 import { AdminHeroSkillsPanel } from '../features/admin/AdminHeroSkillsPanel';
 import { UsersTable } from '../features/admin/UsersTable';
 import { AdminTimelinePanel } from '../features/admin/AdminTimelinePanel';
+import { AdminGiveawaysPanel } from '../features/admin/AdminGiveawaysPanel';
 import { useAuth } from '../features/auth/AuthProvider';
 import { Modal } from '../components/Modal';
 import { firestore } from '../firebase';
@@ -3512,6 +3513,7 @@ export function AdminPage() {
                   <AdminSidebarLink href="/admin/partners" label="Partners" icon={<Star className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/contact" label="Contact" icon={<Mail className="w-5 h-5" />} />
                   <AdminSidebarLink href="/admin/timeline" label="Timeline" icon={<Timer className="w-5 h-5" />} />
+                  <AdminSidebarLink href="/admin/giveaways" label="Giveaways" icon={<Gift className="w-5 h-5" />} />
                 <AdminSidebarLink href="/admin/hero-skills" label="Hero Skills" icon={<Zap className="w-5 h-5" />} />
               </nav>
             </div>
@@ -3537,6 +3539,7 @@ export function AdminPage() {
               <Route path="team" element={<AdminTeamPanel />} />
               <Route path="partners" element={<AdminPartnersPanel />} />
               <Route path="contact" element={<AdminContactPanel />} />
+              <Route path="giveaways" element={<AdminGiveawaysPanel />} />
               <Route path="hero-skills" element={<AdminHeroSkillsPanel />} />
               <Route path="*" element={<Navigate to="/admin/users" replace />} />
             </Routes>

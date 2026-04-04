@@ -42,7 +42,7 @@ function http_request(string $url, string $method = 'GET', ?string $body = null,
     }
     $res = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    $ch = null;
     if ($code >= 200 && $code < 300 && $res !== false) return $res;
     return null;
   }
@@ -157,7 +157,8 @@ foreach ($results as $row) {
   $version = field_string($fields, 'version');
   $title = field_string($fields, 'title');
   $desc = field_string($fields, 'desc');
-  $pubDate = date_rss_from_ts(field_ts($fields, 'createdAt'));
+  $ts = field_ts($fields, 'createdAt');
+  $pubDate = date_rss_from_ts($ts);
   if ($id === '' || $title === '') continue;
 
   $itemTitle = 'v' . $version . ' — ' . $title;

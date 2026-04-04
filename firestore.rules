@@ -141,6 +141,53 @@ service cloud.firestore {
       allow read, update, delete: if isStaff();
     }
 
+    function giveawayData(giveawayId) {
+      return get(/databases/$(database)/documents/giveaways/$(giveawayId)).data;
+    }
+
+    function isGiveawayOpen(giveawayId) {
+      let g = giveawayData(giveawayId);
+      let okStatus = g.status == 'OPEN';
+      let okStart = !('startAt' in g) || g.startAt == null || request.time >= g.startAt;
+      let okEnd = !('endAt' in g) || g.endAt == null || request.time <= g.endAt;
+      return okStatus && okStart && okEnd;
+    }
+
+    match /giveaways/{giveawayId} {
+      allow read: if true;
+      allow create, delete: if isStaff();
+      allow update: if isStaff()
+        || (
+          request.auth != null
+          && isGiveawayOpen(giveawayId)
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['entryCount'])
+          && request.resource.data.entryCount is int
+          && request.resource.data.entryCount == (
+            (('entryCount' in resource.data) && (resource.data.entryCount is int)) ? resource.data.entryCount : 0
+          ) + 1
+        );
+
+      match /entries/{uid} {
+        allow read: if isStaff() || (request.auth != null && request.auth.uid == uid);
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && isGiveawayOpen(giveawayId)
+          && !exists(/databases/$(database)/documents/giveaways/$(giveawayId)/entries/$(uid));
+        allow update: if false;
+        allow delete: if isStaff();
+      }
+
+      match /public_entries/{uid} {
+        allow read: if true;
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && isGiveawayOpen(giveawayId)
+          && !exists(/databases/$(database)/documents/giveaways/$(giveawayId)/public_entries/$(uid));
+        allow update: if false;
+        allow delete: if isStaff();
+      }
+    }
+
     match /builds/{buildId} {
       allow read: if resource.data.status == "PUBLISHED"
         || isStaff()

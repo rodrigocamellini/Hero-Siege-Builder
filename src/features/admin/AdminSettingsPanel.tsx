@@ -74,7 +74,7 @@ export function AdminSettingsPanel() {
       setLoading(true);
       try {
         const snap = await getDoc(doc(firestore, 'appSettings', 'public'));
-        const data = snap.exists() ? (snap.data() as { registrationEnabled?: unknown }) : null;
+        const data = snap.exists() ? (snap.data() as any) : null;
         setRegistrationEnabled(data?.registrationEnabled !== false);
 
         const blogSnap = await getDoc(doc(firestore, 'appSettings', 'blog'));

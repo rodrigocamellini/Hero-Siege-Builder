@@ -106,6 +106,7 @@ export function Navbar({ lang, setLang, t }: { lang: Language; setLang: (l: Lang
       children: [
         { label: 'Ether', href: '/tree/ether', badge: 'New' },
         { label: 'Incarnation', href: '/tree/incarnation', badge: 'New' },
+        { label: 'Clone', href: '/tree/clone', badge: 'New' },
       ],
     },
     { label: t.nav[5], href: '/blog' },

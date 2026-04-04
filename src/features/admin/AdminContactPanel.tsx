@@ -58,6 +58,8 @@ function formatDateTime(ms: number) {
 export function AdminContactPanel() {
   const [tipsWidgetUrl, setTipsWidgetUrl] = useState('https://widget.livepix.gg/embed/5970e0b2-e7ea-4640-8f3b-2ee791b822f1');
   const [tipsQrCodeUrl, setTipsQrCodeUrl] = useState('');
+  const [paypalUrl, setPaypalUrl] = useState('');
+  const [paypalHtml, setPaypalHtml] = useState('');
   const [savingTips, setSavingTips] = useState(false);
   const [tipsFlash, setTipsFlash] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
@@ -103,8 +105,12 @@ export function AdminContactPanel() {
         const data = snap.data() as any;
         const widget = safeString(data?.tipsWidgetUrl).trim();
         const qr = safeString(data?.tipsQrCodeUrl).trim();
+        const pUrl = safeString(data?.paypalUrl).trim();
+        const pHtml = safeString(data?.paypalHtml).trim();
         if (widget) setTipsWidgetUrl(widget);
         if (qr) setTipsQrCodeUrl(qr);
+        setPaypalUrl(pUrl);
+        setPaypalHtml(pHtml);
       },
       () => null,
     );
@@ -195,13 +201,15 @@ export function AdminContactPanel() {
         {
           tipsWidgetUrl: tipsWidgetUrl.trim(),
           tipsQrCodeUrl: tipsQrCodeUrl.trim(),
+          paypalUrl: paypalUrl.trim(),
+          paypalHtml: paypalHtml.trim(),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-      setTipsFlash({ type: 'ok', text: 'Tips settings saved.' });
+      setTipsFlash({ type: 'ok', text: 'Contact settings saved.' });
     } catch {
-      setTipsFlash({ type: 'error', text: 'Failed to save tips settings.' });
+      setTipsFlash({ type: 'error', text: 'Failed to save contact settings.' });
     } finally {
       setSavingTips(false);
     }
@@ -230,7 +238,7 @@ export function AdminContactPanel() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="font-heading font-bold uppercase tracking-tight text-brand-darker">Contact</div>
-            <div className="mt-2 text-sm text-brand-darker/60">Messages sent from the Contact page, plus Tips widget settings.</div>
+            <div className="mt-2 text-sm text-brand-darker/60">Messages sent from the Contact page, plus Tips and PayPal settings.</div>
           </div>
           <button
             type="button"
@@ -238,7 +246,7 @@ export function AdminContactPanel() {
             disabled={savingTips}
             className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-brand-orange text-white text-xs font-bold uppercase tracking-widest disabled:opacity-60 disabled:cursor-not-allowed hover:brightness-95 transition"
           >
-            {savingTips ? 'Saving...' : 'Save Tips'}
+            {savingTips ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
 
@@ -263,6 +271,27 @@ export function AdminContactPanel() {
               onChange={(e) => setTipsQrCodeUrl(e.target.value)}
               className="mt-2 w-full rounded-xl border border-brand-dark/10 bg-white px-4 py-3 text-sm text-brand-darker outline-none focus:border-brand-orange/40"
               placeholder="https://.../qrcode.png"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">PayPal Link (optional)</div>
+            <input
+              value={paypalUrl}
+              onChange={(e) => setPaypalUrl(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-brand-dark/10 bg-white px-4 py-3 text-sm text-brand-darker outline-none focus:border-brand-orange/40"
+              placeholder="https://paypal.me/..."
+            />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">PayPal HTML Code (optional)</div>
+            <textarea
+              value={paypalHtml}
+              onChange={(e) => setPaypalHtml(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-brand-dark/10 bg-white px-4 py-3 text-xs font-mono text-brand-darker outline-none focus:border-brand-orange/40 min-h-28"
+              placeholder="<form action=&quot;https://www.paypal.com/donate&quot; ...>...</form>"
             />
           </div>
         </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, Crown, Star, Trophy, Twitch, User, Wrench, RefreshCw, Rocket } from 'lucide-react';
 import { classNames, tierOrder, type ClassKey, type Tier } from '../data/tierlist';
 import { firestore } from '../firebase';
@@ -15,6 +15,7 @@ type MediaItem = { title: string; image: string; link: string };
 type MediaSettings = { site: MediaItem; discord: MediaItem; reddit: MediaItem };
 type MediaSettingsHsb = { discord: MediaItem; twitch: MediaItem };
 type PartnerRow = { id: string; twitchUsername: string; kickUrl: string; displayName: string; avatarUrl: string; exclusive: boolean; order: number };
+type ActiveGiveaway = { id: string; title: string; prizeTitle: string; prizeImageUrl: string; endAt: any };
 
 function isTier(v: unknown): v is Tier {
   return typeof v === 'string' && (tierOrder as readonly string[]).includes(v);
@@ -141,6 +142,7 @@ async function probeKickLive(kickUrl: string) {
 
 export function Sidebar() {
   const { t } = useLanguage();
+  const location = useLocation();
   const [podiumS, setPodiumS] = useState<PodiumEntry[] | null>(null);
   const [steamPlayers, setSteamPlayers] = useState<number | null>(null);
   const [topBuilders, setTopBuilders] = useState<TopBuilder[] | null>(null);
@@ -150,6 +152,53 @@ export function Sidebar() {
   const [featuredPartner, setFeaturedPartner] = useState<PartnerRow | null>(null);
   const [featuredPartnerLive, setFeaturedPartnerLive] = useState<boolean | null>(null);
   const [timeline, setTimeline] = useState<Array<{ id: string; version: string; type: 'fix' | 'change' | 'major'; title: string; desc: string; createdAt: any }>>([]);
+  const [activeGiveaway, setActiveGiveaway] = useState<ActiveGiveaway | null>(null);
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      if (location.pathname !== '/') {
+        if (!stop) setActiveGiveaway(null);
+        return;
+      }
+      try {
+        const snap = await getDocs(query(collection(firestore, 'giveaways'), orderBy('createdAt', 'desc'), limit(20)));
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .filter((d) => d?.status === 'OPEN');
+        const now = Date.now();
+        const chosen =
+          list.find((g) => {
+            const s = g?.startAt && typeof g.startAt?.toMillis === 'function' ? g.startAt.toMillis() : typeof g?.startAt?.seconds === 'number' ? g.startAt.seconds * 1000 : 0;
+            const e = g?.endAt && typeof g.endAt?.toMillis === 'function' ? g.endAt.toMillis() : typeof g?.endAt?.seconds === 'number' ? g.endAt.seconds * 1000 : 0;
+            if (s && now < s) return false;
+            if (e && now > e) return false;
+            return true;
+          }) ?? null;
+        if (!stop) {
+          if (!chosen) {
+            setActiveGiveaway(null);
+          } else {
+            setActiveGiveaway({
+              id: String(chosen.id),
+              title: safeString(chosen?.title),
+              prizeTitle: safeString(chosen?.prizeTitle),
+              prizeImageUrl: safeString(chosen?.prizeImageUrl),
+              endAt: chosen?.endAt ?? null,
+            });
+          }
+        }
+      } catch {
+        if (!stop) setActiveGiveaway(null);
+      }
+    };
+    void load();
+    const id = window.setInterval(load, 60 * 1000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [location.pathname]);
 
   useEffect(() => {
     const loadMedia = async () => {
@@ -444,6 +493,32 @@ export function Sidebar() {
   return (
     <aside className="space-y-8">
       <SeasonCountdown t={t} />
+
+      {location.pathname === '/' && activeGiveaway ? (
+        <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-heading font-bold text-lg uppercase tracking-tight">Giveaway</h3>
+            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Open</span>
+          </div>
+          <Link to={`/giveaways/${encodeURIComponent(activeGiveaway.id)}`} className="mt-4 block rounded-2xl border border-brand-dark/10 overflow-hidden hover:border-brand-orange/40 transition-colors">
+            {activeGiveaway.prizeImageUrl ? (
+              <div className="w-full h-32 bg-brand-bg overflow-hidden">
+                <img src={activeGiveaway.prizeImageUrl} alt={activeGiveaway.prizeTitle || activeGiveaway.title} className="w-full h-full object-cover" />
+              </div>
+            ) : null}
+            <div className="p-4">
+              <div className="font-heading font-bold text-lg text-brand-darker">{activeGiveaway.title}</div>
+              <div className="mt-1 text-xs text-brand-darker/60">{activeGiveaway.prizeTitle}</div>
+            </div>
+          </Link>
+          <Link
+            to={`/giveaways/${encodeURIComponent(activeGiveaway.id)}`}
+            className="mt-4 inline-flex items-center justify-center w-full px-4 py-3 rounded-xl bg-brand-orange text-white text-xs font-bold uppercase tracking-widest hover:brightness-95 transition"
+          >
+            Participate
+          </Link>
+        </div>
+      ) : null}
 
       {mediaHsb && (
         <div className="bg-white p-6 rounded-2xl border border-brand-dark/5 shadow-sm">

@@ -55,6 +55,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { translations } from '../i18n/translations';
 import { CHARM_DB } from '../data/charmDb';
 import { EXTRA_SHIELDS } from '../data/extraShields';
+import { allRelicNames } from '../data/relics';
 import { slugify } from '../utils/slugify';
 
 type Role = 'USER' | 'CONTRIBUTOR' | 'MODERATOR' | 'PARTNER' | 'DEVELOPER';
@@ -1045,7 +1046,7 @@ export function ForumPage() {
   }, [itemOptions, itemSearch]);
 
   const relicOptions = useMemo(() => {
-    return [];
+    return allRelicNames;
   }, []);
 
   const filteredRelicOptions = useMemo(() => {

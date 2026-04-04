@@ -40,6 +40,8 @@ type SubjectValue = (typeof SUBJECT_OPTIONS)[number]['value'];
 export function ContactPage() {
   const [tipsWidgetUrl, setTipsWidgetUrl] = useState('https://widget.livepix.gg/embed/5970e0b2-e7ea-4640-8f3b-2ee791b822f1');
   const [tipsQrCodeUrl, setTipsQrCodeUrl] = useState('');
+  const [paypalUrl, setPaypalUrl] = useState('');
+  const [paypalHtml, setPaypalHtml] = useState('');
 
   const [name, setName] = useState('');
   const [nick, setNick] = useState('');
@@ -84,14 +86,27 @@ export function ContactPage() {
         const data = snap.data() as any;
         const widget = safeString(data?.tipsWidgetUrl).trim();
         const qr = safeString(data?.tipsQrCodeUrl).trim();
+        const pUrl = safeString(data?.paypalUrl).trim();
+        const pHtml = safeString(data?.paypalHtml).trim();
         if (widget) setTipsWidgetUrl(widget);
         if (qr) setTipsQrCodeUrl(qr);
+        if (pUrl) setPaypalUrl(pUrl);
+        if (pHtml) setPaypalHtml(pHtml);
       } catch {
         return;
       }
     };
     void load();
   }, []);
+
+  const canRenderPaypalHtml = useMemo(() => {
+    const html = paypalHtml.trim();
+    if (!html) return false;
+    const lower = html.toLowerCase();
+    if (lower.includes('<script')) return false;
+    if (!lower.includes('paypal')) return false;
+    return true;
+  }, [paypalHtml]);
 
   const normalizedImages = useMemo(() => {
     return imageLinks.map((s) => s.trim()).filter(Boolean);
@@ -321,6 +336,33 @@ export function ContactPage() {
                   />
                 </div>
               </div>
+
+              {paypalUrl.trim() || paypalHtml.trim() ? (
+                <div className="border border-brand-dark/10 rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-brand-darker/60 border-b border-brand-dark/10 bg-brand-bg/40">
+                    Tip Widget
+                  </div>
+                  <div className="p-4 bg-white space-y-3">
+                    {canRenderPaypalHtml ? (
+                      <div className="w-full overflow-hidden" dangerouslySetInnerHTML={{ __html: paypalHtml }} />
+                    ) : null}
+                    {!canRenderPaypalHtml && paypalUrl.trim() ? (
+                      <a
+                        href={paypalUrl.trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full inline-flex items-center justify-center gap-3 px-4 py-3 rounded-xl border border-brand-dark/10 bg-white hover:bg-brand-bg transition-colors text-sm font-bold text-brand-darker"
+                      >
+                        <svg viewBox="0 0 64 64" className="w-6 h-6" aria-hidden="true">
+                          <path fill="#003087" d="M25.7 53.6H15.6a2 2 0 0 1-2-2.3L19 13.7a2 2 0 0 1 2-1.7h18.2c10.1 0 16.2 4.8 14.5 15.1-1.6 10.1-9.2 14.8-18.7 14.8h-5.1a2 2 0 0 0-2 1.7l-1.9 9.2a1.9 1.9 0 0 1-1.9 1.8z" />
+                          <path fill="#009cde" d="M49.2 19.4c.1.9.1 1.8 0 2.8-1.6 10.1-9.2 14.8-18.7 14.8h-5.1a2 2 0 0 0-2 1.7l-2.3 11.2-.6 3a1.7 1.7 0 0 0 1.7 2h9.1a1.9 1.9 0 0 0 1.9-1.6l.1-.5 1.7-8.4.1-.5a1.9 1.9 0 0 1 1.9-1.6h1.2c7.7 0 13.8-3.1 15.6-12.2.8-3.8.4-7-1.6-9z" />
+                        </svg>
+                        PayPal
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </aside>
         </div>

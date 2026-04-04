@@ -202,35 +202,59 @@ export function AdminTimelinePanel() {
       const payload = editId
         ? { version: nextVersion, type, title: title.trim(), desc: desc.trim(), updatedAt: serverTimestamp() }
         : { version: nextVersion, type, title: title.trim(), desc: desc.trim(), createdAt: serverTimestamp() };
+      let savedId = editId;
       if (editId) {
-        await setDoc(doc(firestore, 'website_updates', editId), payload, { merge: true });
+        await withTimeout(setDoc(doc(firestore, 'website_updates', editId), payload, { merge: true }), 15000, 'Timeout ao salvar no Firestore.');
       } else {
-        await addDoc(collection(firestore, 'website_updates'), payload);
-      }
-      // Refresh list
-      const snap = await getDocs(query(collection(firestore, 'website_updates'), orderBy('createdAt', 'desc'), limit(200)));
-      const list: TimelineRow[] = [];
-      snap.forEach((d) => {
-        const v = d.data() as any;
-        list.push({
-          id: d.id,
-          version: String(v?.version ?? ''),
-          type: (v?.type === 'fix' || v?.type === 'change' || v?.type === 'major') ? v.type : 'change',
-          title: String(v?.title ?? ''),
-          desc: String(v?.desc ?? ''),
-          createdAt: v?.createdAt ?? null,
-        });
-      });
-      setRows(list);
-      const latest = latestVersionFromRows(list);
-      setCurrentVersion(latest);
-      try {
-        const url = await generateFeedToStorage(list);
-        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, feedUrl: url, updatedAt: serverTimestamp() }, { merge: true });
-      } catch {
-        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true });
+        const ref = await withTimeout(addDoc(collection(firestore, 'website_updates'), payload), 15000, 'Timeout ao salvar no Firestore.');
+        savedId = ref.id;
       }
       setFormOpen(false);
+      setSaving(false);
+
+      setRows((prev) => {
+        const base = Array.isArray(prev) ? prev.slice() : [];
+        const row: TimelineRow = {
+          id: savedId || '',
+          version: nextVersion,
+          type,
+          title: title.trim(),
+          desc: desc.trim(),
+          createdAt: new Date(),
+        };
+        if (!savedId) return base;
+        const ix = base.findIndex((r) => r.id === savedId);
+        if (ix >= 0) base[ix] = { ...base[ix], ...row };
+        else base.unshift(row);
+        const latest = latestVersionFromRows(base);
+        setCurrentVersion(latest);
+        void withTimeout(
+          setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true }),
+          15000,
+          'Timeout ao salvar no Firestore.',
+        ).catch(() => {});
+        return base;
+      });
+
+      void (async () => {
+        try {
+          const snap = await withTimeout(getDocs(query(collection(firestore, 'website_updates'), orderBy('createdAt', 'desc'), limit(200))), 15000, 'Timeout ao carregar do Firestore.');
+          const list: TimelineRow[] = [];
+          snap.forEach((d) => {
+            const v = d.data() as any;
+            list.push({
+              id: d.id,
+              version: String(v?.version ?? ''),
+              type: (v?.type === 'fix' || v?.type === 'change' || v?.type === 'major') ? v.type : 'change',
+              title: String(v?.title ?? ''),
+              desc: String(v?.desc ?? ''),
+              createdAt: v?.createdAt ?? null,
+            });
+          });
+          setRows(list);
+          setCurrentVersion(latestVersionFromRows(list));
+        } catch {}
+      })();
     } catch (e: any) {
       setError(e?.message || 'Failed to save.');
     } finally {
@@ -241,9 +265,8 @@ export function AdminTimelinePanel() {
   async function onDelete(id: string) {
     setError(null);
     try {
-      await deleteDoc(doc(firestore, 'website_updates', id));
-      // reload list
-      const snap = await getDocs(query(collection(firestore, 'website_updates'), orderBy('createdAt', 'desc'), limit(200)));
+      await withTimeout(deleteDoc(doc(firestore, 'website_updates', id)), 15000, 'Timeout ao deletar no Firestore.');
+      const snap = await withTimeout(getDocs(query(collection(firestore, 'website_updates'), orderBy('createdAt', 'desc'), limit(200))), 15000, 'Timeout ao carregar do Firestore.');
       const list: TimelineRow[] = [];
       snap.forEach((d) => {
         const v = d.data() as any;
@@ -259,12 +282,11 @@ export function AdminTimelinePanel() {
       setRows(list);
       const latest = latestVersionFromRows(list);
       setCurrentVersion(latest);
-      try {
-        const url = await generateFeedToStorage(list);
-        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, feedUrl: url, updatedAt: serverTimestamp() }, { merge: true });
-      } catch {
-        await setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true });
-      }
+      void withTimeout(
+        setDoc(doc(firestore, 'appSettings', 'timeline'), { currentVersion: latest, updatedAt: serverTimestamp() }, { merge: true }),
+        15000,
+        'Timeout ao salvar no Firestore.',
+      ).catch(() => {});
       setConfirmDelId(null);
     } catch (e: any) {
       setError(e?.message || 'Failed to delete.');

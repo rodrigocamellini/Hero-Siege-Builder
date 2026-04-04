@@ -136,8 +136,9 @@ export function Footer({ t, currentYear }: { t: Translation; currentYear: number
       { label: t.footerLinks[2], href: '/tree' },
       { label: t.footerLinks[3], href: '/blog' },
       { label: t.footerLinks[4], href: '/forum' },
-      { label: t.footerLinks[5], href: '/network' },
-      { label: t.footerLinks[6], href: '/contact' },
+      { label: t.footerLinks[5], href: '/giveaways' },
+      { label: t.footerLinks[6], href: '/network' },
+      { label: t.footerLinks[7], href: '/contact' },
     ];
   }, [t.footerLinks]);
 

@@ -1,6 +1,7 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 const envOverride = (import.meta.env.VITE_FIREBASE_ENV || '').toString().trim().toLowerCase();
 const isLocalHost =
@@ -33,6 +34,7 @@ const firebaseConfig = useDev ? devConfig : prodConfig;
 export const firebaseApp = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig);
 export const firebaseAuth = getAuth(firebaseApp);
 export const firestore = getFirestore(firebaseApp);
+export const firebaseFunctions = getFunctions(firebaseApp);
 
 if (useEmulator) {
   try {
@@ -43,5 +45,12 @@ if (useEmulator) {
     console.info(`[HSB] Firestore emulator connected at ${host}:${port}`);
   } catch {
     // ignore
+  }
+
+  try {
+    const host = (import.meta.env.VITE_FUNCTIONS_EMULATOR_HOST || '127.0.0.1').toString();
+    const port = Number(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT || 5001);
+    connectFunctionsEmulator(firebaseFunctions, host, port);
+  } catch {
   }
 }

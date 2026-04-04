@@ -19,12 +19,28 @@ function getTimeParts(targetMs: number) {
 }
 
 export function SeasonCountdown({ t }: { t: Translation }) {
-  const targetMs = useMemo(() => Date.UTC(2026, 3, 3, 4, 0, 0), []);
+  const targetMs = useMemo(() => Date.UTC(2026, 3, 3, 13, 0, 0), []);
   const [parts, setParts] = useState(() => ({ diff: 1, days: 0, hours: 0, minutes: 0, seconds: 0 }));
+  const [uptime, setUptime] = useState(() => ({ days: 0, hours: 0, minutes: 0, seconds: 0 }));
 
   useEffect(() => {
-    setParts(getTimeParts(targetMs));
-    const id = window.setInterval(() => setParts(getTimeParts(targetMs)), 1000);
+    const tick = () => {
+      const now = Date.now();
+      if (now < targetMs) {
+        setParts(getTimeParts(targetMs));
+      } else {
+        const diff = now - targetMs;
+        const totalSeconds = Math.floor(diff / 1000);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        setUptime({ days, hours, minutes, seconds });
+        if (parts.diff !== 0) setParts({ diff: 0, days: 0, hours: 0, minutes: 0, seconds: 0 });
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, [targetMs]);
 
@@ -37,9 +53,26 @@ export function SeasonCountdown({ t }: { t: Translation }) {
       </div>
 
       {parts.diff === 0 ? (
-        <div className="mt-6 bg-brand-orange/10 border border-brand-orange/20 rounded-xl px-4 py-3 text-center font-heading font-bold uppercase tracking-widest text-brand-orange">
-          {t.seasonCountdown.live}
-        </div>
+        <>
+          <div className="mt-6 bg-brand-orange/10 border border-brand-orange/20 rounded-xl px-4 py-3 text-center font-heading font-bold uppercase tracking-widest text-brand-orange">
+            {t.seasonCountdown.live}
+          </div>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-center overflow-hidden min-w-0">
+              <div className="font-heading font-bold text-xl text-brand-darker tabular-nums leading-none">{uptime.days}</div>
+            </div>
+            <div className="bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-center overflow-hidden min-w-0">
+              <div className="font-heading font-bold text-xl text-brand-darker tabular-nums leading-none">{pad2(uptime.hours)}</div>
+            </div>
+            <div className="bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-center overflow-hidden min-w-0">
+              <div className="font-heading font-bold text-xl text-brand-darker tabular-nums leading-none">{pad2(uptime.minutes)}</div>
+            </div>
+            <div className="bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-center overflow-hidden min-w-0">
+              <div className="font-heading font-bold text-xl text-brand-darker tabular-nums leading-none">{pad2(uptime.seconds)}</div>
+            </div>
+          </div>
+          <div className="mt-1 text-[10px] font-bold text-brand-dark/40 uppercase tracking-widest text-center">Uptime</div>
+        </>
       ) : (
         <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-brand-bg border border-brand-dark/10 rounded-xl p-3 text-center overflow-hidden min-w-0">

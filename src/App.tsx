@@ -15,6 +15,7 @@ import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { EtherTree } from './features/tree/EtherTree';
 import { IncarnationTree } from './features/tree/IncarnationTree';
 import { TreeLandingPage } from './pages/TreeLandingPage';
+import { TreeClonePage } from './pages/TreeClonePage';
 import { TeamPage } from './pages/TeamPage';
 import { PartnersPage } from './pages/PartnersPage';
 import { NetworkPage } from './pages/NetworkPage';
@@ -25,6 +26,8 @@ import { ForumPage } from './pages/ForumPage';
 import { BuildPage } from './pages/BuildPage';
 import { TimelinePage } from './pages/TimelinePage';
 import { ContactPage } from './pages/ContactPage';
+import { GiveawaysPage } from './pages/GiveawaysPage';
+import { GiveawayPage } from './pages/GiveawayPage';
 import { AdsenseMetaManager } from './components/AdsenseMetaManager';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import { classNames, type ClassKey } from './data/tierlist';
@@ -3530,6 +3533,8 @@ export default function App() {
         path="/contact"
         element={<ContactPage />}
       />
+      <Route path="/giveaways" element={<GiveawaysPage />} />
+      <Route path="/giveaways/:id" element={<GiveawayPage />} />
       <Route path="/database" element={<DatabaseLandingPage />} />
       <Route
         path="/database/classes"
@@ -3580,6 +3585,7 @@ export default function App() {
         element={<ItemsDatabasePage />}
       />
       <Route path="/tree" element={<TreeLandingPage />} />
+      <Route path="/tree/clone" element={<TreeClonePage />} />
       <Route
         path="/tree/ether"
         element={

@@ -12,7 +12,7 @@ export function TreeLandingPage() {
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-16">
         <h1 className="font-heading font-bold text-3xl md:text-4xl uppercase tracking-tight text-brand-darker">Tree</h1>
         <p className="mt-2 text-sm text-brand-darker/60">{t.treeLanding.subtitle}</p>
-        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link
             to="/tree/ether"
             className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
@@ -27,9 +27,15 @@ export function TreeLandingPage() {
             <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">{t.treeLanding.incarnation}</div>
             <div className="mt-2 text-sm text-brand-darker/60">{t.treeLanding.incarnationDesc}</div>
           </Link>
+          <Link
+            to="/tree/clone"
+            className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
+          >
+            <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Clone</div>
+            <div className="mt-2 text-sm text-brand-darker/60">Carregar arquivos e comparar nodes/links com nossa árvore.</div>
+          </Link>
         </div>
       </div>
     </StandardPage>
   );
 }
-

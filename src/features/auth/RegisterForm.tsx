@@ -7,6 +7,7 @@ import { FirebaseError } from 'firebase/app';
 import { createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, updateProfile } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { firebaseAuth, firestore } from '../../firebase';
+import { useLanguage } from '../../i18n/LanguageProvider';
 
 const DEFAULT_AVATAR_URL = '/images/avatar.webp';
 
@@ -17,19 +18,22 @@ function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
-function authErrorMessage(err: unknown) {
+function authErrorMessage(err: unknown, lang: 'en' | 'pt' | 'ru') {
   const code = err instanceof FirebaseError ? err.code : typeof (err as any)?.code === 'string' ? String((err as any).code) : '';
-  if (code === 'auth/email-already-in-use') return 'Esse email já está em uso.';
-  if (code === 'auth/invalid-email') return 'Email inválido.';
-  if (code === 'auth/weak-password') return 'Senha fraca. Use pelo menos 8 caracteres.';
-  if (code === 'auth/operation-not-allowed') return 'Login por email/senha está desativado no Firebase.';
-  if (code === 'auth/unauthorized-domain') return 'Domínio não autorizado no Firebase Auth.';
-  if (code === 'auth/network-request-failed') return 'Falha de conexão. Tente novamente.';
-  if (code === 'auth/invalid-api-key' || code === 'auth/api-key-not-valid') return 'API key do Firebase inválida ou bloqueada.';
-  return code ? `Erro: ${code}` : 'Erro ao criar conta. Tente novamente.';
+  const isEn = lang === 'en';
+  const isRu = lang === 'ru';
+  if (code === 'auth/email-already-in-use') return isEn ? 'This email is already in use.' : isRu ? 'Этот email уже используется.' : 'Esse email já está em uso.';
+  if (code === 'auth/invalid-email') return isEn ? 'Invalid email.' : isRu ? 'Неверный email.' : 'Email inválido.';
+  if (code === 'auth/weak-password') return isEn ? 'Weak password. Use at least 8 characters.' : isRu ? 'Слабый пароль. Используйте минимум 8 символов.' : 'Senha fraca. Use pelo menos 8 caracteres.';
+  if (code === 'auth/operation-not-allowed') return isEn ? 'Email/password sign-in is disabled in Firebase.' : isRu ? 'Вход по email/паролю отключен в Firebase.' : 'Login por email/senha está desativado no Firebase.';
+  if (code === 'auth/unauthorized-domain') return isEn ? 'Unauthorized domain in Firebase Auth.' : isRu ? 'Домен не авторизован в Firebase Auth.' : 'Domínio não autorizado no Firebase Auth.';
+  if (code === 'auth/network-request-failed') return isEn ? 'Network error. Please try again.' : isRu ? 'Ошибка сети. Попробуйте снова.' : 'Falha de conexão. Tente novamente.';
+  if (code === 'auth/invalid-api-key' || code === 'auth/api-key-not-valid') return isEn ? 'Invalid or blocked Firebase API key.' : isRu ? 'Неверный или заблокированный API key Firebase.' : 'API key do Firebase inválida ou bloqueada.';
+  return code ? (isEn ? `Error: ${code}` : isRu ? `Ошибка: ${code}` : `Erro: ${code}`) : isEn ? 'Failed to create account. Please try again.' : isRu ? 'Не удалось создать аккаунт. Попробуйте снова.' : 'Erro ao criar conta. Tente novamente.';
 }
 
 export function RegisterForm() {
+  const { lang } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
@@ -65,22 +69,26 @@ export function RegisterForm() {
     e.preventDefault();
     setError(null);
     if (!registrationEnabled) {
-      setError('Registration is currently disabled.');
+      setError(lang === 'en' ? 'Registration is currently disabled.' : lang === 'ru' ? 'Регистрация сейчас отключена.' : 'Cadastro está desativado no momento.');
       return;
     }
 
     const emailNorm = email.trim().toLowerCase();
     const displayName = realName.trim();
     if (!isValidEmail(emailNorm)) {
-      setError('Email inválido.');
+      setError(lang === 'en' ? 'Invalid email.' : lang === 'ru' ? 'Неверный email.' : 'Email inválido.');
       return;
     }
     if (!displayName) {
-      setError('Nome é obrigatório.');
+      setError(lang === 'en' ? 'Real name is required.' : lang === 'ru' ? 'Настоящее имя обязательно.' : 'Nome é obrigatório.');
       return;
     }
     if (!password) {
-      setError('Senha é obrigatória.');
+      setError(lang === 'en' ? 'Password is required.' : lang === 'ru' ? 'Пароль обязателен.' : 'Senha é obrigatória.');
+      return;
+    }
+    if (password.length < 8) {
+      setError(lang === 'en' ? 'Password must be at least 8 characters.' : lang === 'ru' ? 'Пароль должен быть минимум 8 символов.' : 'Senha deve ter pelo menos 8 caracteres.');
       return;
     }
 
@@ -91,7 +99,7 @@ export function RegisterForm() {
       await updateProfile(cred.user, { displayName, photoURL: DEFAULT_AVATAR_URL });
       navigate(callbackUrl, { replace: true });
     } catch (err) {
-      setError(authErrorMessage(err));
+      setError(authErrorMessage(err, lang));
     } finally {
       setLoading(false);
     }
@@ -101,7 +109,7 @@ export function RegisterForm() {
     <form onSubmit={onSubmit} className="w-full max-w-md bg-white border border-brand-dark/10 rounded-2xl p-6 space-y-4">
       {!registrationLoading && !registrationEnabled ? (
         <div className="bg-red-600/10 border border-red-600/20 rounded-xl p-3 text-xs font-bold text-red-700">
-          Account creation is currently disabled.
+          {lang === 'en' ? 'Account creation is currently disabled.' : lang === 'ru' ? 'Создание аккаунта сейчас отключено.' : 'Criação de conta está desativada no momento.'}
         </div>
       ) : null}
       <div>
@@ -118,7 +126,9 @@ export function RegisterForm() {
       </div>
 
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">Nome real</label>
+        <label className="block text-xs font-bold uppercase tracking-widest text-brand-darker/60 mb-2">
+          {lang === 'en' ? 'Real name' : lang === 'ru' ? 'Настоящее имя' : 'Nome real'}
+        </label>
         <input
           value={realName}
           onChange={(e) => setRealName(e.target.value)}
