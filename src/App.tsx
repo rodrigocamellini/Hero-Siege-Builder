@@ -15,7 +15,6 @@ import { AccountSettingsPage } from './pages/AccountSettingsPage';
 import { EtherTree } from './features/tree/EtherTree';
 import { IncarnationTree } from './features/tree/IncarnationTree';
 import { TreeLandingPage } from './pages/TreeLandingPage';
-import { TreeClonePage } from './pages/TreeClonePage';
 import { TeamPage } from './pages/TeamPage';
 import { PartnersPage } from './pages/PartnersPage';
 import { NetworkPage } from './pages/NetworkPage';
@@ -3585,7 +3584,7 @@ export default function App() {
         element={<ItemsDatabasePage />}
       />
       <Route path="/tree" element={<TreeLandingPage />} />
-      <Route path="/tree/clone" element={<TreeClonePage />} />
+      <Route path="/tree/clone" element={<Navigate to="/tree" replace />} />
       <Route
         path="/tree/ether"
         element={

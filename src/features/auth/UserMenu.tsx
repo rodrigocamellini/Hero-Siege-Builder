@@ -79,12 +79,12 @@ export function UserMenu() {
 
   if (loading) {
     return (
-      <div className="w-10 h-10 rounded-lg bg-brand-bg border border-brand-dark/10 animate-pulse hidden sm:block" />
+      <div className="w-10 h-10 rounded-lg bg-brand-bg border border-brand-dark/10 animate-pulse" />
     );
   }
 
   return (
-    <div ref={rootRef} className="relative hidden sm:block">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

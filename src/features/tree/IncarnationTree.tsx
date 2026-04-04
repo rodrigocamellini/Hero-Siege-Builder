@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore';
 import { Crosshair, Search, X } from 'lucide-react';
 import { firestore } from '../../firebase';
 import { useLanguage } from '../../i18n/LanguageProvider';
@@ -12,6 +12,8 @@ const COLOR_ACTIVE = '#00FA9A';
 const COLOR_INACTIVE = '#1a1a2e';
 const COLOR_CORE = '#ffcc00';
 const START_NODE_IDS = new Set([1, 2, 110, 271, 716, 882, 1118, 1120]);
+const INC_SPRITESHEET_URL = '/images/incarnation/icons.webp';
+const INC_SPRITE_TILE = 30;
 
 const rawData = (() => {
   const raw = (pointsJson as any)?.datasetColl?.[0]?.data ?? (pointsJson as any)?.data ?? pointsJson;
@@ -43,13 +45,55 @@ const CENTER_ORIGIN = (() => {
 
 function getImageUrl(path: unknown) {
   if (typeof path !== 'string' || !path) return null;
-  if (path.startsWith('http')) return path;
-  if (path.startsWith('public/')) return `/${path.substring(7)}`;
-  if (!path.includes('/') && (path.endsWith('.webp') || path.endsWith('.png'))) {
-    return `/images/incarnation/${path}`;
+  const v = path.trim();
+  if (!v) return null;
+  const normalized = v.replace(/^image\s*=\s*/i, '').trim();
+  if (/^atlas:\s*.+$/i.test(normalized)) return null;
+  if (/^(?:sprite|spr|spriteid|sheet):\s*\d+$/i.test(normalized)) return null;
+  if (/^\d+$/.test(normalized)) return null;
+  if (normalized.startsWith('http')) return normalized;
+  if (normalized.startsWith('public/')) return `/${normalized.substring(7)}`;
+  if (!normalized.includes('/') && (normalized.endsWith('.webp') || normalized.endsWith('.png'))) {
+    return `/images/incarnation/${normalized}`;
   }
-  if (!path.startsWith('/')) return `/${path}`;
-  return path;
+  if (!normalized.startsWith('/')) return `/${normalized}`;
+  return normalized;
+}
+
+type SpriteSheetInfo = { url: string; tile: number; w: number; h: number; cols: number; rows: number };
+
+function parseSpriteId(raw: unknown) {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().replace(/^image\s*=\s*/i, '').trim();
+  if (!v) return null;
+  if (/^\d+$/.test(v)) return Number(v);
+  const m = v.match(/^(?:sprite|spr|spriteid|sheet):\s*(\d+)$/i);
+  if (!m) return null;
+  return Number(m[1]);
+}
+
+function parseAtlasId(raw: unknown) {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().replace(/^image\s*=\s*/i, '').trim();
+  const m = v.match(/^atlas:\s*(.+)$/i);
+  if (!m) return null;
+  const id = String(m[1] ?? '').trim();
+  return id ? id : null;
+}
+
+function getSpriteStyle(sheet: SpriteSheetInfo, spriteId: number, iconPx: number) {
+  if (!Number.isFinite(spriteId) || spriteId <= 0) return null;
+  const idx = spriteId - 1;
+  const col = idx % sheet.cols;
+  const row = Math.floor(idx / sheet.cols);
+  if (row < 0 || row >= sheet.rows) return null;
+  const scale = iconPx / sheet.tile;
+  return {
+    backgroundImage: `url(${sheet.url})`,
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: `${sheet.w * scale}px ${sheet.h * scale}px`,
+    backgroundPosition: `${-col * iconPx}px ${-row * iconPx}px`,
+  } as const;
 }
 
 function renderStyledText(text: string) {
@@ -189,6 +233,9 @@ export function IncarnationTree() {
   const [infinitePoints, setInfinitePoints] = useState(false);
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [atlasSheetUrl, setAtlasSheetUrl] = useState(INC_SPRITESHEET_URL);
+  const [spriteSheet, setSpriteSheet] = useState<SpriteSheetInfo | null>(null);
+  const [atlasRects, setAtlasRects] = useState<Record<string, { x: number; y: number; w: number; h: number }>>({});
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
@@ -351,14 +398,58 @@ export function IncarnationTree() {
     const nodesColl = `incarnation_tree_nodes${suffix}`;
     const bgColl = `incarnation_backgrounds${suffix}`;
     const cfgId = `incarnation_tree${suffix}`;
+    const cacheKey = `hsb_incarnation_nodes_cache${suffix}`;
+    const cacheTtlMs = 24 * 60 * 60 * 1000;
+    const sessionFetchKey = `hsb_incarnation_nodes_last_fetch${suffix}`;
+    const minFetchIntervalMs = 2 * 60 * 1000;
+    let didSetFromCache = false;
+    const noCache =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('nocache') === '1' : false;
+    try {
+      if (noCache) {
+        try {
+          window.localStorage.removeItem(cacheKey);
+        } catch {}
+      }
+      const raw = window.localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as any;
+        const savedAt = Number(parsed?.savedAt);
+        const data = parsed?.data as Record<string, FirestoreNodeData> | undefined;
+        if (Number.isFinite(savedAt) && data && typeof data === 'object' && Date.now() - savedAt < cacheTtlMs) {
+          setNodeData(data);
+          didSetFromCache = true;
+        }
+      }
+    } catch {}
 
-    const unsubNodes = onSnapshot(collection(firestore, nodesColl), (snap) => {
-      const data: Record<string, FirestoreNodeData> = {};
-      snap.forEach((d) => {
-        data[d.id] = d.data() as FirestoreNodeData;
-      });
-      setNodeData(data);
-    });
+    let stop = false;
+    const loadNodes = async () => {
+      if (stop) return;
+      if (didSetFromCache) {
+        try {
+          const last = Number(window.sessionStorage.getItem(sessionFetchKey));
+          if (Number.isFinite(last) && Date.now() - last < minFetchIntervalMs) return;
+        } catch {}
+      }
+      try {
+        try {
+          window.sessionStorage.setItem(sessionFetchKey, String(Date.now()));
+        } catch {}
+        const snap = await getDocs(collection(firestore, nodesColl));
+        if (stop) return;
+        const data: Record<string, FirestoreNodeData> = {};
+        snap.forEach((d) => {
+          data[d.id] = d.data() as FirestoreNodeData;
+        });
+        setNodeData(data);
+        try {
+          window.localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), data }));
+        } catch {}
+      } catch {
+      }
+    };
+    void loadNodes();
 
     const unsubBg = onSnapshot(collection(firestore, bgColl), (snap) => {
       const list: BgImage[] = [];
@@ -384,11 +475,99 @@ export function IncarnationTree() {
     );
 
     return () => {
-      unsubNodes();
+      stop = true;
       unsubBg();
       unsubConfig();
     };
   }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const cols = Math.max(1, Math.floor(w / INC_SPRITE_TILE));
+      const rows = Math.max(1, Math.floor(h / INC_SPRITE_TILE));
+      setSpriteSheet({ url: atlasSheetUrl, tile: INC_SPRITE_TILE, w, h, cols, rows });
+    };
+    img.src = atlasSheetUrl;
+  }, [atlasSheetUrl]);
+
+  useEffect(() => {
+    const isLocalHost = typeof window !== 'undefined' && /^(localhost|127\.|192\.168\.|10\.)/.test(window.location.hostname);
+    const suffix = ((import.meta as any)?.env?.VITE_LOCAL_CONFIG_SUFFIX as string | undefined) || (isLocalHost ? '_local' : '');
+    const localColl = `incarnation_icon_atlas${suffix}`;
+    const onlineColl = 'incarnation_icon_atlas';
+    let localHas = false;
+    let localSheet = INC_SPRITESHEET_URL;
+    let localRects: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    let onlineSheet = INC_SPRITESHEET_URL;
+    let onlineRects: Record<string, { x: number; y: number; w: number; h: number }> = {};
+
+    const apply = () => {
+      const localCount = localRects ? Object.keys(localRects).length : 0;
+      const onlineCount = onlineRects ? Object.keys(onlineRects).length : 0;
+      const useLocal = localHas && localCount > 0;
+      if (useLocal) {
+        setAtlasSheetUrl(localSheet || INC_SPRITESHEET_URL);
+        setAtlasRects(localRects || {});
+        return;
+      }
+      setAtlasSheetUrl(onlineSheet || INC_SPRITESHEET_URL);
+      setAtlasRects(onlineRects || {});
+    };
+
+    const unsubLocal = onSnapshot(doc(firestore, localColl, 'default'), (snap) => {
+      if (!snap.exists()) {
+        localHas = false;
+        localSheet = INC_SPRITESHEET_URL;
+        localRects = {};
+        apply();
+        return;
+      }
+      localHas = true;
+      const d = snap.data() as any;
+      localSheet = typeof d?.sheetUrl === 'string' ? d.sheetUrl.trim() : INC_SPRITESHEET_URL;
+      localRects = typeof d?.rects === 'object' && d?.rects ? d.rects : {};
+      apply();
+    });
+
+    const unsubOnline =
+      suffix && suffix !== ''
+        ? onSnapshot(doc(firestore, onlineColl, 'default'), (snap) => {
+            if (!snap.exists()) {
+              onlineSheet = INC_SPRITESHEET_URL;
+              onlineRects = {};
+              apply();
+              return;
+            }
+            const d = snap.data() as any;
+            onlineSheet = typeof d?.sheetUrl === 'string' ? d.sheetUrl.trim() : INC_SPRITESHEET_URL;
+            onlineRects = typeof d?.rects === 'object' && d?.rects ? d.rects : {};
+            apply();
+          })
+        : () => {};
+
+    return () => {
+      unsubLocal();
+      unsubOnline();
+    };
+  }, []);
+
+  const getAtlasStyle = (sheet: SpriteSheetInfo, rect: { x: number; y: number; w: number; h: number }, maxPx: number) => {
+    const base = Math.max(rect.w, rect.h);
+    const scale = base > 0 ? maxPx / base : 1;
+    const width = Math.round(rect.w * scale);
+    const height = Math.round(rect.h * scale);
+    return {
+      width: `${width}px`,
+      height: `${height}px`,
+      backgroundImage: `url(${sheet.url})`,
+      backgroundRepeat: 'no-repeat',
+      backgroundSize: `${sheet.w * scale}px ${sheet.h * scale}px`,
+      backgroundPosition: `${-rect.x * scale}px ${-rect.y * scale}px`,
+    } as const;
+  };
 
   const didInit = useRef(false);
 
@@ -801,6 +980,22 @@ export function IncarnationTree() {
                   className="w-[75%] h-[75%] object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
                   style={{ zIndex: 20 }}
                 />
+              ) : spriteSheet && parseAtlasId(nodeData[String(idx + 1)]?.image) ? (
+                (() => {
+                  const id = parseAtlasId(nodeData[String(idx + 1)]?.image) as string;
+                  const rect = atlasRects[id];
+                  if (!rect) return null;
+                  const style = getAtlasStyle(spriteSheet, rect, Math.round(nodeSize * 0.75));
+                  return <div className="drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]" style={{ borderRadius: '999px', ...style }} />;
+                })()
+              ) : spriteSheet && parseSpriteId(nodeData[String(idx + 1)]?.image) ? (
+                <div
+                  className="w-[75%] h-[75%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+                  style={{
+                    borderRadius: '999px',
+                    ...(getSpriteStyle(spriteSheet, parseSpriteId(nodeData[String(idx + 1)]?.image) as number, Math.round(nodeSize * 0.75)) ?? {}),
+                  }}
+                />
               ) : nodeData[String(idx + 1)]?.icon ? (
                 <i
                   className={`${String(nodeData[String(idx + 1)]?.icon)} drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]`}
@@ -816,7 +1011,7 @@ export function IncarnationTree() {
         </div>
       );
     });
-  }, [activeNodes, adjacencyList, bestPathToTarget, handleNodeClick, infinitePoints, matchNodeSet, maxPoints, nodeData, previewTarget, previewPath]);
+  }, [activeNodes, adjacencyList, atlasRects, bestPathToTarget, handleNodeClick, infinitePoints, matchNodeSet, maxPoints, nodeData, previewTarget, previewPath, spriteSheet]);
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -910,6 +1105,22 @@ export function IncarnationTree() {
                     <>
                       {getImageUrl((stat as any).image) ? (
                         <img src={getImageUrl((stat as any).image) ?? ''} alt="icon" className="w-4 h-4 object-contain mr-2 drop-shadow-md" />
+                      ) : spriteSheet && parseSpriteId((stat as any).image) ? (
+                        <div
+                          className="w-4 h-4 mr-2 drop-shadow-md"
+                          style={{
+                            borderRadius: '999px',
+                            ...(getSpriteStyle(spriteSheet, parseSpriteId((stat as any).image) as number, 16) ?? {}),
+                          }}
+                        />
+                      ) : spriteSheet && parseAtlasId((stat as any).image) ? (
+                        (() => {
+                          const id = parseAtlasId((stat as any).image) as string;
+                          const rect = atlasRects[id];
+                          if (!rect) return null;
+                          const style = getAtlasStyle(spriteSheet, rect, 16);
+                          return <div className="mr-2 drop-shadow-md" style={{ borderRadius: '999px', ...style }} />;
+                        })()
                       ) : (stat as any).icon ? (
                         <i className={`${(stat as any).icon} mr-2`} style={{ color: (stat as any).iconColor || '#FFD700', fontSize: '12px' }} />
                       ) : null}
@@ -929,6 +1140,22 @@ export function IncarnationTree() {
                     <>
                       {getImageUrl((stat as any).image) ? (
                         <img src={getImageUrl((stat as any).image) ?? ''} alt="icon" className="w-4 h-4 object-contain mr-2 drop-shadow-md" />
+                      ) : spriteSheet && parseSpriteId((stat as any).image) ? (
+                        <div
+                          className="w-4 h-4 mr-2 drop-shadow-md"
+                          style={{
+                            borderRadius: '999px',
+                            ...(getSpriteStyle(spriteSheet, parseSpriteId((stat as any).image) as number, 16) ?? {}),
+                          }}
+                        />
+                      ) : spriteSheet && parseAtlasId((stat as any).image) ? (
+                        (() => {
+                          const id = parseAtlasId((stat as any).image) as string;
+                          const rect = atlasRects[id];
+                          if (!rect) return null;
+                          const style = getAtlasStyle(spriteSheet, rect, 16);
+                          return <div className="mr-2 drop-shadow-md" style={{ borderRadius: '999px', ...style }} />;
+                        })()
                       ) : (stat as any).icon ? (
                         <i className={`${(stat as any).icon} mr-2`} style={{ color: (stat as any).iconColor || '#FFD700', fontSize: '12px' }} />
                       ) : null}

@@ -30,7 +30,6 @@ export async function joinGiveaway(
   uid: string,
   profile: { displayName: string; nick?: string | null; photoURL?: string | null },
 ): Promise<JoinGiveawayResult> {
-  const gRef = doc(firestore, 'giveaways', giveawayId);
   const entryRef = doc(firestore, 'giveaways', giveawayId, 'entries', uid);
   const publicEntryRef = doc(firestore, 'giveaways', giveawayId, 'public_entries', uid);
   const displayName = safeString(profile.displayName).trim();
@@ -40,13 +39,10 @@ export async function joinGiveaway(
   const nameLower = name.toLowerCase();
 
   await runTransaction(firestore, async (tx) => {
-    const gSnap = await tx.get(gRef);
-    const currentCount = gSnap.exists() && typeof (gSnap.data() as any)?.entryCount === 'number' ? Number((gSnap.data() as any).entryCount) : 0;
     const existing = await tx.get(entryRef);
     if (existing.exists()) throw new Error('Você já está participando.');
     tx.set(entryRef, { uid, displayName, nick: nick || null, nameLower, photoURL: photoURL || null, createdAt: serverTimestamp() });
     tx.set(publicEntryRef, { uid, displayName, nick: nick || null, nameLower, photoURL: photoURL || null, createdAt: serverTimestamp() });
-    tx.set(gRef, { entryCount: currentCount + 1 }, { merge: true });
   });
 
   return { ok: true };

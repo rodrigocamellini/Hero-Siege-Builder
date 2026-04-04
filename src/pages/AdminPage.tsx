@@ -1,7 +1,7 @@
 import { StandardPage } from '../components/StandardPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Shield, SlidersHorizontal, Users, Network, Search, Plus, Pencil, Trash2, Save, X, FileText, Mail, Hammer, Zap, Star, Image, Timer, Gift } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch, type Timestamp } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { AdminSidebarLink } from '../features/admin/AdminSidebarLink';
@@ -16,6 +16,9 @@ import { AdminGiveawaysPanel } from '../features/admin/AdminGiveawaysPanel';
 import { useAuth } from '../features/auth/AuthProvider';
 import { Modal } from '../components/Modal';
 import { firestore } from '../firebase';
+import incarnationPointsJson from '../../files_incarnation/incarnation_completa (1).json';
+
+const incarnationReferenceText = '';
 
 type EtherNodeRow = { id: string; name: string; description: string; image: string };
 
@@ -34,6 +37,8 @@ const ONLINE_INC_TREE_NODES_COLL = 'incarnation_tree_nodes';
 const ONLINE_INC_TREE_BG_COLL = 'incarnation_backgrounds';
 const ONLINE_ETHER_TREE_NODES_COLL = 'ether_tree_nodes';
 const ONLINE_ETHER_TREE_BG_COLL = 'ether_backgrounds';
+const INC_TREE_ICON_ATLAS_COLL = `incarnation_icon_atlas${adminConfigSuffix}`;
+const ONLINE_INC_TREE_ICON_ATLAS_COLL = 'incarnation_icon_atlas';
 
 type EtherBgRow = {
   id: string;
@@ -69,11 +74,16 @@ type IncarnationBgRow = EtherBgRow;
 
 function normalizeIncarnationImageUrl(path: unknown) {
   if (typeof path !== 'string' || !path) return '';
-  if (path.startsWith('http')) return path;
-  if (path.startsWith('public/')) return `/${path.substring(7)}`;
-  if (!path.includes('/') && (path.endsWith('.webp') || path.endsWith('.png'))) return `/images/incarnation/${path}`;
-  if (!path.startsWith('/')) return `/${path}`;
-  return path;
+  const v = path.trim().replace(/^image\s*=\s*/i, '').trim();
+  if (!v) return '';
+  if (/^atlas:\s*.+$/i.test(v)) return '';
+  if (/^(?:sprite|spr|spriteid|sheet):\s*\d+$/i.test(v)) return '';
+  if (/^\d+$/.test(v)) return '';
+  if (v.startsWith('http')) return v;
+  if (v.startsWith('public/')) return `/${v.substring(7)}`;
+  if (!v.includes('/') && (v.endsWith('.webp') || v.endsWith('.png'))) return `/images/incarnation/${v}`;
+  if (!v.startsWith('/')) return `/${v}`;
+  return v;
 }
 
 function firestoreErrorMessage(err: unknown) {
@@ -1493,6 +1503,110 @@ function AdminEtherTreePanel() {
   );
 }
 
+type IncPoint = { x: number; y: number };
+type RefIncNode = { x: number; y: number; type: number };
+type RefIncTypeInfo = { title1: string; desc1: string; value1: string; format1: string; desc2: string; value2: string; format2: string };
+
+const INC_TREE_POINTS: IncPoint[] = (() => {
+  const raw = (incarnationPointsJson as any)?.datasetColl?.[0]?.data ?? (incarnationPointsJson as any)?.data ?? incarnationPointsJson;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((p: any) => ({ x: Number(p?.x), y: Number(p?.y) }))
+    .filter((p: IncPoint) => Number.isFinite(p.x) && Number.isFinite(p.y));
+})();
+
+function boundsInc(points: IncPoint[]) {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const p of points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, w: 1, h: 1 };
+  return { minX, minY, w: Math.max(1e-9, maxX - minX), h: Math.max(1e-9, maxY - minY) };
+}
+
+function normalizeInc(points: IncPoint[]) {
+  const b = boundsInc(points);
+  return points.map((p) => ({ x: (p.x - b.minX) / b.w, y: (p.y - b.minY) / b.h }));
+}
+
+function parseReferenceIncarnation(text: string) {
+  const start = text.indexOf('treeFromExtract');
+  const nodesStart = start >= 0 ? text.indexOf('nodes:[', start) : -1;
+  const nodesEnd = nodesStart >= 0 ? text.indexOf('],connections:[', nodesStart) : -1;
+  const nodesSeg = nodesStart >= 0 && nodesEnd >= 0 ? text.slice(nodesStart, nodesEnd) : '';
+
+  const nodes: RefIncNode[] = [];
+  const nodeRe = /\{id:(\d+),x:(-?\d+(?:\.\d+)?),y:(-?\d+(?:\.\d+)?),nodeType:"[^"]+",type:(\d+),spriteKey:"[^"]*"/g;
+  for (const m of nodesSeg.matchAll(nodeRe)) {
+    const x = Number(m[2]);
+    const y = Number(m[3]);
+    const type = Number(m[4]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(type)) continue;
+    nodes.push({ x, y, type });
+  }
+
+  const types: Record<number, RefIncTypeInfo> = {};
+  const typeRe =
+    /(\d+):\{spriteID:(\d+),title1:"([^"]*)",desc1:"([^"]*)",desc2:"([^"]*)",format1:"([^"]*)",format2:"([^"]*)",value1:([^,}]+),value2:([^,}]+)/g;
+  for (const m of text.matchAll(typeRe)) {
+    const type = Number(m[1]);
+    if (!Number.isFinite(type)) continue;
+    types[type] = {
+      title1: String(m[3] ?? ''),
+      desc1: String(m[4] ?? ''),
+      desc2: String(m[5] ?? ''),
+      format1: String(m[6] ?? ''),
+      format2: String(m[7] ?? ''),
+      value1: String(m[8] ?? '').trim(),
+      value2: String(m[9] ?? '').trim(),
+    };
+  }
+
+  return { nodes, types };
+}
+
+function formatReferenceDesc(info: RefIncTypeInfo) {
+  const parts: string[] = [];
+  const add = (value: string, format: string, desc: string) => {
+    const v = String(value ?? '').trim();
+    const d = String(desc ?? '').trim();
+    const f = String(format ?? '').trim();
+    if (!v || !d) return;
+    const signed = v.startsWith('-') || v.startsWith('+') ? v : `+${v}`;
+    parts.push(`${signed}${f ? `${f}` : ''} ${d}`.trim());
+  };
+  add(info.value1, info.format1, info.desc1);
+  add(info.value2, info.format2, info.desc2);
+  return parts.join(', ');
+}
+
+function nearestMapNormalized(ourN: Array<{ x: number; y: number }>, refN: Array<{ x: number; y: number }>) {
+  const out = new Array<{ idx: number; dist2: number }>(ourN.length);
+  for (let i = 0; i < ourN.length; i++) {
+    const p = ourN[i]!;
+    let bestIdx = -1;
+    let bestD2 = Number.POSITIVE_INFINITY;
+    for (let j = 0; j < refN.length; j++) {
+      const q = refN[j]!;
+      const dx = p.x - q.x;
+      const dy = p.y - q.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        bestIdx = j;
+      }
+    }
+    out[i] = { idx: bestIdx, dist2: bestD2 };
+  }
+  return out;
+}
+
 function AdminIncarnationTreePanel() {
   const defaultViewMode: 'offline' | 'online' = adminConfigSuffix ? 'offline' : 'online';
   const [viewMode, setViewMode] = useState<'offline' | 'online'>(defaultViewMode);
@@ -1541,6 +1655,34 @@ function AdminIncarnationTreePanel() {
   const [jsonBusy, setJsonBusy] = useState(false);
   const [jsonCopied, setJsonCopied] = useState(false);
   const [quickNodeId, setQuickNodeId] = useState('1');
+  const [autoFillBusy, setAutoFillBusy] = useState(false);
+  const [atlasSheetUrl, setAtlasSheetUrl] = useState('/images/incarnation/icons.webp');
+  const [atlasRects, setAtlasRects] = useState<Record<string, { x: number; y: number; w: number; h: number }>>({});
+  const [atlasLoading, setAtlasLoading] = useState(false);
+  const [atlasSaving, setAtlasSaving] = useState(false);
+  const [atlasFlash, setAtlasFlash] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const atlasContainerRef = useRef<HTMLDivElement | null>(null);
+  const atlasImgRef = useRef<HTMLImageElement | null>(null);
+  const [atlasNatural, setAtlasNatural] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [draftRect, setDraftRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [draftId, setDraftId] = useState('');
+  const [atlasMode, setAtlasMode] = useState<'draw' | 'pan'>('draw');
+  const [atlasView, setAtlasView] = useState<{ x: number; y: number; k: number }>({ x: 0, y: 0, k: 1 });
+  const atlasViewRef = useRef(atlasView);
+  const atlasDragRef = useRef<
+    | { mode: 'none' }
+    | { mode: 'draw'; startWorldX: number; startWorldY: number }
+    | { mode: 'pan'; startClientX: number; startClientY: number; startX: number; startY: number }
+  >({ mode: 'none' });
+  const atlasRafRef = useRef<number | null>(null);
+  const atlasPendingRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [atlasCursor, setAtlasCursor] = useState<{ x: number; y: number } | null>(null);
+  const [rectModal, setRectModal] = useState<'edit' | 'delete' | null>(null);
+  const [rectTargetId, setRectTargetId] = useState<string | null>(null);
+  const [rectX, setRectX] = useState('0');
+  const [rectY, setRectY] = useState('0');
+  const [rectW, setRectW] = useState('1');
+  const [rectH, setRectH] = useState('1');
 
   const nodeOptions = useMemo(() => Array.from({ length: 1621 }, (_, i) => String(i + 1)), []);
 
@@ -1561,6 +1703,7 @@ function AdminIncarnationTreePanel() {
   const viewCfgId = viewMode === 'online' ? ONLINE_INC_TREE_CONFIG_ID : INC_TREE_CONFIG_ID;
   const viewNodesColl = viewMode === 'online' ? ONLINE_INC_TREE_NODES_COLL : INC_TREE_NODES_COLL;
   const viewBgColl = viewMode === 'online' ? ONLINE_INC_TREE_BG_COLL : INC_TREE_BG_COLL;
+  const viewIconAtlasColl = viewMode === 'online' ? ONLINE_INC_TREE_ICON_ATLAS_COLL : INC_TREE_ICON_ATLAS_COLL;
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -1655,6 +1798,280 @@ function AdminIncarnationTreePanel() {
     return () => unsub();
   }, [viewBgColl]);
 
+  useEffect(() => {
+    const loadAtlas = async () => {
+      setAtlasLoading(true);
+      setAtlasFlash(null);
+      try {
+        const snap = await getDoc(doc(firestore, viewIconAtlasColl, 'default'));
+        if (snap.exists()) {
+          const d = snap.data() as any;
+          const url = typeof d?.sheetUrl === 'string' ? d.sheetUrl.trim() : '/images/incarnation/icons.webp';
+          setAtlasSheetUrl(url || '/images/incarnation/icons.webp');
+          const rects = typeof d?.rects === 'object' && d?.rects ? d.rects : {};
+          setAtlasRects(rects);
+        } else {
+          setAtlasSheetUrl('/images/incarnation/icons.webp');
+          setAtlasRects({});
+        }
+      } catch (err) {
+        setAtlasFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao carregar atlas.' });
+      } finally {
+        setAtlasLoading(false);
+      }
+    };
+    void loadAtlas();
+  }, [viewIconAtlasColl]);
+
+  useEffect(() => {
+    const img = atlasImgRef.current;
+    if (!img) return;
+    const onLoad = () => setAtlasNatural({ w: img.naturalWidth, h: img.naturalHeight });
+    if (img.complete) onLoad();
+    else img.addEventListener('load', onLoad, { once: true });
+    return () => img.removeEventListener('load', onLoad as any);
+  }, [atlasSheetUrl]);
+
+  useEffect(() => {
+    atlasViewRef.current = atlasView;
+  }, [atlasView]);
+
+  const fitAtlas = useCallback(() => {
+    const el = atlasContainerRef.current;
+    if (!el) return;
+    if (!atlasNatural.w || !atlasNatural.h) return;
+    const box = el.getBoundingClientRect();
+    const k = Math.max(0.05, Math.min(10, Math.min(box.width / atlasNatural.w, box.height / atlasNatural.h)));
+    const x = (box.width - atlasNatural.w * k) / 2;
+    const y = (box.height - atlasNatural.h * k) / 2;
+    setAtlasView({ x, y, k });
+  }, [atlasNatural.h, atlasNatural.w]);
+
+  const setAtlasScale = useCallback(
+    (k: number) => {
+      const el = atlasContainerRef.current;
+      if (!el) return;
+      if (!atlasNatural.w || !atlasNatural.h) return;
+      const box = el.getBoundingClientRect();
+      const px = box.width / 2;
+      const py = box.height / 2;
+      const v = atlasViewRef.current;
+      const nextK = Math.max(0.05, Math.min(20, k));
+      const worldX = (px - v.x) / v.k;
+      const worldY = (py - v.y) / v.k;
+      const nextX = px - worldX * nextK;
+      const nextY = py - worldY * nextK;
+      setAtlasView({ x: nextX, y: nextY, k: nextK });
+    },
+    [atlasNatural.h, atlasNatural.w],
+  );
+
+  useEffect(() => {
+    if (!atlasNatural.w || !atlasNatural.h) return;
+    fitAtlas();
+  }, [atlasNatural.h, atlasNatural.w, fitAtlas]);
+
+  const toWorld = (clientX: number, clientY: number) => {
+    const el = atlasContainerRef.current;
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    const px = clientX - box.left;
+    const py = clientY - box.top;
+    const v = atlasViewRef.current;
+    const x = (px - v.x) / v.k;
+    const y = (py - v.y) / v.k;
+    return { x, y, px, py };
+  };
+
+  const scheduleDraft = (rect: { x: number; y: number; w: number; h: number } | null) => {
+    atlasPendingRectRef.current = rect;
+    if (atlasRafRef.current != null) return;
+    atlasRafRef.current = window.requestAnimationFrame(() => {
+      atlasRafRef.current = null;
+      setDraftRect(atlasPendingRectRef.current);
+    });
+  };
+
+  const onAtlasPointerDown = (e: React.PointerEvent) => {
+    if (viewMode === 'online') return;
+    if (e.button !== 0 && e.button !== 1) return;
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    const w = toWorld(e.clientX, e.clientY);
+    if (!w) return;
+    const mode = atlasMode === 'pan' || e.button === 1;
+    if (mode) {
+      const v = atlasViewRef.current;
+      atlasDragRef.current = { mode: 'pan', startClientX: e.clientX, startClientY: e.clientY, startX: v.x, startY: v.y };
+      return;
+    }
+    const startWorldX = Math.max(0, Math.min(atlasNatural.w, w.x));
+    const startWorldY = Math.max(0, Math.min(atlasNatural.h, w.y));
+    atlasDragRef.current = { mode: 'draw', startWorldX, startWorldY };
+    setDraftId('');
+    scheduleDraft({ x: Math.round(startWorldX), y: Math.round(startWorldY), w: 1, h: 1 });
+  };
+
+  const onAtlasPointerMove = (e: React.PointerEvent) => {
+    const w = toWorld(e.clientX, e.clientY);
+    if (w) {
+      const cx = Math.round(Math.max(0, Math.min(atlasNatural.w, w.x)));
+      const cy = Math.round(Math.max(0, Math.min(atlasNatural.h, w.y)));
+      setAtlasCursor({ x: cx, y: cy });
+    }
+    const drag = atlasDragRef.current;
+    if (drag.mode === 'pan') {
+      const dx = e.clientX - drag.startClientX;
+      const dy = e.clientY - drag.startClientY;
+      setAtlasView((prev) => ({ ...prev, x: drag.startX + dx, y: drag.startY + dy }));
+      return;
+    }
+    if (drag.mode !== 'draw' || viewMode === 'online') return;
+    if (!w) return;
+    const curX = Math.max(0, Math.min(atlasNatural.w, w.x));
+    const curY = Math.max(0, Math.min(atlasNatural.h, w.y));
+    const x1 = drag.startWorldX;
+    const y1 = drag.startWorldY;
+    const x = Math.round(Math.min(x1, curX));
+    const y = Math.round(Math.min(y1, curY));
+    const ww = Math.max(1, Math.round(Math.abs(curX - x1)));
+    const hh = Math.max(1, Math.round(Math.abs(curY - y1)));
+    scheduleDraft({ x, y, w: ww, h: hh });
+  };
+
+  const onAtlasPointerUp = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    atlasDragRef.current = { mode: 'none' };
+    try {
+      (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const onAtlasWheel = (e: React.WheelEvent) => {
+    if (!atlasNatural.w || !atlasNatural.h) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = atlasContainerRef.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    const px = e.clientX - box.left;
+    const py = e.clientY - box.top;
+    const delta = -e.deltaY;
+    const zoom = delta > 0 ? 1.12 : 1 / 1.12;
+    const v = atlasViewRef.current;
+    const nextK = Math.max(0.05, Math.min(20, v.k * zoom));
+    const worldX = (px - v.x) / v.k;
+    const worldY = (py - v.y) / v.k;
+    const nextX = px - worldX * nextK;
+    const nextY = py - worldY * nextK;
+    setAtlasView({ x: nextX, y: nextY, k: nextK });
+  };
+
+  useEffect(() => {
+    const el = atlasContainerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!atlasNatural.w || !atlasNatural.h) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const box = el.getBoundingClientRect();
+      const px = e.clientX - box.left;
+      const py = e.clientY - box.top;
+      const delta = -e.deltaY;
+      const zoom = delta > 0 ? 1.12 : 1 / 1.12;
+      const v = atlasViewRef.current;
+      const nextK = Math.max(0.05, Math.min(20, v.k * zoom));
+      const worldX = (px - v.x) / v.k;
+      const worldY = (py - v.y) / v.k;
+      const nextX = px - worldX * nextK;
+      const nextY = py - worldY * nextK;
+      setAtlasView({ x: nextX, y: nextY, k: nextK });
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler as any);
+  }, [atlasNatural.h, atlasNatural.w]);
+
+  const addRect = () => {
+    if (viewMode === 'online') {
+      setAtlasFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline.' });
+      return;
+    }
+    const id = draftId.trim();
+    const r = draftRect;
+    if (!id || !r) {
+      setAtlasFlash({ type: 'error', text: 'Defina um ID e desenhe um retângulo.' });
+      return;
+    }
+    setAtlasRects((prev) => ({ ...prev, [id]: r }));
+    setDraftRect(null);
+    setDraftId('');
+  };
+
+  const removeRect = (id: string) => {
+    if (viewMode === 'online') {
+      setAtlasFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline.' });
+      return;
+    }
+    setAtlasRects((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const openEditRect = (id: string) => {
+    const r = atlasRects[id];
+    if (!r) return;
+    setRectTargetId(id);
+    setRectX(String(r.x));
+    setRectY(String(r.y));
+    setRectW(String(r.w));
+    setRectH(String(r.h));
+    setRectModal('edit');
+  };
+
+  const openDeleteRect = (id: string) => {
+    if (!atlasRects[id]) return;
+    setRectTargetId(id);
+    setRectModal('delete');
+  };
+
+  const applyRectEdit = () => {
+    if (viewMode === 'online') {
+      setAtlasFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline.' });
+      return;
+    }
+    const id = rectTargetId;
+    if (!id) return;
+    const x = Math.max(0, Math.floor(Number(rectX)));
+    const y = Math.max(0, Math.floor(Number(rectY)));
+    const w = Math.max(1, Math.floor(Number(rectW)));
+    const h = Math.max(1, Math.floor(Number(rectH)));
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+    setAtlasRects((prev) => ({ ...prev, [id]: { x, y, w, h } }));
+    setRectModal(null);
+  };
+
+  const saveAtlas = async () => {
+    if (viewMode === 'online') {
+      setAtlasFlash({ type: 'error', text: 'Modo online é somente leitura. Troque para Offline.' });
+      return;
+    }
+    setAtlasSaving(true);
+    setAtlasFlash(null);
+    try {
+      await setDoc(
+        doc(firestore, viewIconAtlasColl, 'default'),
+        { sheetUrl: atlasSheetUrl, rects: atlasRects, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setAtlasFlash({ type: 'ok', text: 'Atlas salvo.' });
+    } catch (err) {
+      setAtlasFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao salvar atlas.' });
+    } finally {
+      setAtlasSaving(false);
+    }
+  };
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return allNodes;
@@ -1721,6 +2138,78 @@ function AdminIncarnationTreePanel() {
     setFormBlackHole(false);
     setModalOpen(true);
   }, [nodeMap, openEditNode, quickNodeId, viewMode]);
+
+  const autoFillMissingFromReference = useCallback(async () => {
+    if (!INC_TREE_POINTS.length) {
+      setFlash({ type: 'error', text: 'Falha ao carregar pontos da árvore (incarnation_completa).' });
+      return;
+    }
+    setAutoFillBusy(true);
+    setFlash(null);
+    try {
+      const ref = parseReferenceIncarnation(incarnationReferenceText);
+      if (ref.nodes.length === 0) {
+        setFlash({ type: 'error', text: 'Referência não contém treeFromExtract.nodes.' });
+        return;
+      }
+      const ourN = normalizeInc(INC_TREE_POINTS);
+      const refN = normalizeInc(ref.nodes);
+      const map = nearestMapNormalized(ourN, refN);
+
+      const tolerance2 = 0.01 * 0.01;
+      let writes = 0;
+
+      let batch = writeBatch(firestore);
+      let ops = 0;
+      const flush = async () => {
+        if (ops === 0) return;
+        await batch.commit();
+        batch = writeBatch(firestore);
+        ops = 0;
+      };
+
+      for (let i = 0; i < INC_TREE_POINTS.length; i++) {
+        const id = String(i + 1);
+        const existing = nodeMap.get(id);
+        const existingName = typeof existing?.name === 'string' ? existing.name.trim() : '';
+        const existingDesc = typeof existing?.description === 'string' ? existing.description.trim() : '';
+        if (existingName && existingDesc) continue;
+
+        const m = map[i];
+        if (!m || m.idx < 0 || m.idx >= ref.nodes.length || m.dist2 > tolerance2) continue;
+        const refNode = ref.nodes[m.idx]!;
+        const typeInfo = ref.types[refNode.type];
+        if (!typeInfo) continue;
+
+        const nextName = typeInfo.title1.trim();
+        const nextDesc = formatReferenceDesc(typeInfo);
+
+        const payload: any = { updatedAt: serverTimestamp() };
+        let changed = false;
+        if (!existingName && nextName) {
+          payload.name = nextName;
+          changed = true;
+        }
+        if (!existingDesc && nextDesc) {
+          payload.description = nextDesc;
+          changed = true;
+        }
+        if (!changed) continue;
+
+        batch.set(doc(firestore, viewNodesColl, id), payload, { merge: true });
+        writes += 1;
+        ops += 1;
+        if (ops >= 400) await flush();
+      }
+
+      await flush();
+      setFlash({ type: 'ok', text: `Auto-preenchimento concluído. Nodes atualizados: ${writes}.` });
+    } catch (err) {
+      setFlash({ type: 'error', text: firestoreErrorMessage(err) || 'Falha ao auto-preencher nodes.' });
+    } finally {
+      setAutoFillBusy(false);
+    }
+  }, [nodeMap, viewMode, viewNodesColl]);
 
   const nodeRows = useMemo(() => {
     return filtered.map((n, idx) => {
@@ -2205,6 +2694,16 @@ function AdminIncarnationTreePanel() {
               <FileText className="w-4 h-4" />
               Importar JSON
             </button>
+            <button
+              type="button"
+              onClick={() => void autoFillMissingFromReference()}
+              disabled={autoFillBusy}
+              className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors disabled:opacity-60"
+              title="Preenche automaticamente name/description dos nodes vazios usando o node mais próximo da referência."
+            >
+              <Zap className="w-4 h-4" />
+              {autoFillBusy ? 'Preenchendo...' : 'Auto-Preencher'}
+            </button>
           </div>
           {flash ? (
             <div className={`mt-4 text-xs font-bold ${flash.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>{flash.text}</div>
@@ -2273,6 +2772,172 @@ function AdminIncarnationTreePanel() {
             />
           </div>
 
+          <div className="mt-6 bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
+            <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Icon Atlas (Incarnation)</div>
+            <div className="mt-3 space-y-4">
+              <div className="space-y-3">
+                <label className="block">
+                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Sheet URL</div>
+                  <input
+                    type="text"
+                    value={atlasSheetUrl}
+                    onChange={(e) => setAtlasSheetUrl(e.target.value)}
+                    disabled={viewMode === 'online'}
+                    className="mt-2 w-full bg-white border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+                    placeholder="/images/incarnation/icons.webp"
+                  />
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={draftId}
+                    onChange={(e) => setDraftId(e.target.value)}
+                    disabled={viewMode === 'online'}
+                    className="flex-1 bg-white border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none"
+                    placeholder="ID do ícone (ex: 123 ou armor)"
+                  />
+                  <button
+                    type="button"
+                    onClick={addRect}
+                    disabled={viewMode === 'online' || !draftRect || !draftId.trim()}
+                    className="px-3 py-2 rounded-xl bg-brand-dark text-white text-xs font-bold uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+
+                <div className="border border-brand-dark/10 rounded-xl bg-white p-2 max-h-48 overflow-auto">
+                  {Object.keys(atlasRects).length === 0 ? (
+                    <div className="text-xs text-brand-darker/60">Nenhum recorte.</div>
+                  ) : (
+                    Object.entries(atlasRects).map(([id, r]) => (
+                      <div key={id} className="flex items-center justify-between gap-2 px-2 py-1">
+                        <div className="text-xs font-bold text-brand-darker truncate">{id}</div>
+                        <div className="text-[11px] text-brand-darker/60">
+                          x:{r.x} y:{r.y} w:{r.w} h:{r.h}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditRect(id)}
+                            disabled={viewMode === 'online'}
+                            className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/70 hover:text-brand-darker"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDeleteRect(id)}
+                            disabled={viewMode === 'online'}
+                            className="text-[11px] font-bold uppercase tracking-widest text-red-600 hover:text-red-700"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void saveAtlas()}
+                  disabled={viewMode === 'online' || atlasSaving}
+                  className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  {atlasSaving ? 'Salvando...' : 'Salvar Atlas'}
+                </button>
+                <div className="text-[11px] text-brand-darker/60">Tamanho: {atlasNatural.w}×{atlasNatural.h}</div>
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setAtlasMode('draw')}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold uppercase tracking-widest ${
+                      atlasMode === 'draw' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:bg-brand-bg'
+                    }`}
+                  >
+                    Marcar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAtlasMode('pan')}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold uppercase tracking-widest ${
+                      atlasMode === 'pan' ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-brand-darker border-brand-dark/10 hover:bg-brand-bg'
+                    }`}
+                  >
+                    Mover
+                  </button>
+                  <button type="button" onClick={() => setAtlasScale(atlasViewRef.current.k * 1.25)} className="px-3 py-1.5 rounded-xl border border-brand-dark/10 bg-white text-xs font-bold uppercase tracking-widest text-brand-darker hover:bg-brand-bg">
+                    +
+                  </button>
+                  <button type="button" onClick={() => setAtlasScale(atlasViewRef.current.k / 1.25)} className="px-3 py-1.5 rounded-xl border border-brand-dark/10 bg-white text-xs font-bold uppercase tracking-widest text-brand-darker hover:bg-brand-bg">
+                    -
+                  </button>
+                  <button type="button" onClick={fitAtlas} className="px-3 py-1.5 rounded-xl border border-brand-dark/10 bg-white text-xs font-bold uppercase tracking-widest text-brand-darker hover:bg-brand-bg">
+                    Fit
+                  </button>
+                  <button type="button" onClick={() => setAtlasScale(1)} className="px-3 py-1.5 rounded-xl border border-brand-dark/10 bg-white text-xs font-bold uppercase tracking-widest text-brand-darker hover:bg-brand-bg">
+                    100%
+                  </button>
+                  <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60 ml-2">
+                    Zoom: <span className="text-brand-darker">{Math.round(atlasView.k * 100)}%</span>
+                    {atlasCursor ? (
+                      <>
+                        {' '}| x:<span className="text-brand-darker">{atlasCursor.x}</span> y:<span className="text-brand-darker">{atlasCursor.y}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+                <div
+                  ref={atlasContainerRef}
+                  className={`relative w-full h-[70vh] bg-white border border-brand-dark/10 rounded-xl overflow-hidden ${
+                    atlasMode === 'pan' ? 'cursor-grab' : 'cursor-crosshair'
+                  }`}
+                  style={{ overscrollBehavior: 'contain', touchAction: 'none' }}
+                  onPointerDown={onAtlasPointerDown}
+                  onPointerMove={onAtlasPointerMove}
+                  onPointerUp={onAtlasPointerUp}
+                  onPointerCancel={onAtlasPointerUp}
+                >
+                  <div
+                    className="absolute left-0 top-0"
+                    style={{
+                      transform: `translate(${atlasView.x}px, ${atlasView.y}px) scale(${atlasView.k})`,
+                      transformOrigin: '0 0',
+                      width: `${atlasNatural.w}px`,
+                      height: `${atlasNatural.h}px`,
+                    }}
+                  >
+                    <img
+                      ref={atlasImgRef}
+                      src={atlasSheetUrl}
+                      alt="icons atlas"
+                      className="absolute left-0 top-0 select-none"
+                      draggable={false}
+                      style={{ width: `${atlasNatural.w}px`, height: `${atlasNatural.h}px`, pointerEvents: 'none' }}
+                    />
+                    {Object.entries(atlasRects).map(([id, r]) => (
+                      <div
+                        key={id}
+                        className="absolute border-2 border-emerald-500/70 bg-emerald-500/10 rounded"
+                        style={{ left: r.x, top: r.y, width: r.w, height: r.h, pointerEvents: 'none' }}
+                        title={id}
+                      />
+                    ))}
+                    {draftRect ? (
+                      <div className="absolute border-2 border-brand-orange/70 bg-brand-orange/10 rounded" style={{ left: draftRect.x, top: draftRect.y, width: draftRect.w, height: draftRect.h, pointerEvents: 'none' }} />
+                    ) : null}
+                  </div>
+                </div>
+                {atlasFlash ? <div className={`mt-2 text-xs font-bold ${atlasFlash.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>{atlasFlash.text}</div> : null}
+              </div>
+            </div>
+          </div>
           {adminConfigSuffix ? (
             <div className="mt-6 bg-brand-bg border border-brand-dark/10 rounded-2xl p-4">
               <div className="text-xs font-bold uppercase tracking-widest text-brand-darker/70">Online (Produção)</div>
@@ -2615,6 +3280,61 @@ function AdminIncarnationTreePanel() {
               type="button"
               onClick={() => void deleteBg(confirmDeleteBgId || '')}
               className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={rectModal === 'edit'} title={`Editar Recorte${rectTargetId ? `: ${rectTargetId}` : ''}`} onClose={() => setRectModal(null)}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="block">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">X</div>
+              <input value={rectX} onChange={(e) => setRectX(e.target.value)} type="number" step={1} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label className="block">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">Y</div>
+              <input value={rectY} onChange={(e) => setRectY(e.target.value)} type="number" step={1} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label className="block">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">W</div>
+              <input value={rectW} onChange={(e) => setRectW(e.target.value)} type="number" step={1} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+            <label className="block">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-brand-darker/60">H</div>
+              <input value={rectH} onChange={(e) => setRectH(e.target.value)} type="number" step={1} className="mt-2 w-full bg-brand-bg border border-brand-dark/10 rounded-xl px-3 py-2 text-sm text-brand-darker outline-none" />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setRectModal(null)} className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors">
+              Cancelar
+            </button>
+            <button type="button" onClick={applyRectEdit} disabled={viewMode === 'online'} className="inline-flex items-center gap-2 bg-brand-dark text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-brand-darker transition-colors disabled:opacity-60">
+              <Save className="w-4 h-4" />
+              Aplicar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={rectModal === 'delete'} title={`Excluir Recorte${rectTargetId ? `: ${rectTargetId}` : ''}`} onClose={() => setRectModal(null)}>
+        <div className="space-y-4">
+          <div className="text-sm text-brand-darker/70">Deseja realmente excluir este recorte?</div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setRectModal(null)} className="inline-flex items-center gap-2 bg-brand-bg border border-brand-dark/10 text-brand-darker px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-white transition-colors">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (rectTargetId) removeRect(rectTargetId);
+                setRectModal(null);
+              }}
+              disabled={viewMode === 'online'}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-700 transition-colors disabled:opacity-60"
             >
               <Trash2 className="w-4 h-4" />
               Excluir

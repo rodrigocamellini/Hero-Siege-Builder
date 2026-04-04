@@ -1,6 +1,6 @@
 'use client';
 
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, where } from 'firebase/firestore';
+import { collection, doc, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter, where } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Crown, Gift, Trophy } from 'lucide-react';
@@ -64,6 +64,7 @@ export function GiveawayPage() {
   const [participantsQuery, setParticipantsQuery] = useState('');
   const [participantsCursor, setParticipantsCursor] = useState<any | null>(null);
   const [participantsHasMore, setParticipantsHasMore] = useState(false);
+  const [entryCount, setEntryCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!giveawayId) return;
@@ -123,6 +124,24 @@ export function GiveawayPage() {
       stop = true;
     };
   }, [giveawayId, user?.uid]);
+
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      if (!giveawayId) return;
+      try {
+        const coll = collection(firestore, 'giveaways', giveawayId, 'public_entries');
+        const snap = await getCountFromServer(coll);
+        if (!stop) setEntryCount(Number(snap.data().count) || 0);
+      } catch {
+        if (!stop) setEntryCount(null);
+      }
+    };
+    void load();
+    return () => {
+      stop = true;
+    };
+  }, [giveawayId]);
 
   const loadParticipants = async (opts?: { reset?: boolean }) => {
     if (!giveawayId) return;
@@ -353,7 +372,7 @@ export function GiveawayPage() {
                   <div>
                     <div className="font-heading font-bold uppercase tracking-tight text-brand-darker">Participants</div>
                     <div className="mt-2 text-sm text-brand-darker/60">
-                      {row.entryCount ? `${row.entryCount} total` : ' '}
+                      {typeof entryCount === 'number' ? `${entryCount} total` : row.entryCount ? `${row.entryCount} total` : ' '}
                     </div>
                   </div>
                   <div className="w-full max-w-xs">

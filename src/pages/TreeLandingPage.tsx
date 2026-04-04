@@ -27,13 +27,6 @@ export function TreeLandingPage() {
             <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">{t.treeLanding.incarnation}</div>
             <div className="mt-2 text-sm text-brand-darker/60">{t.treeLanding.incarnationDesc}</div>
           </Link>
-          <Link
-            to="/tree/clone"
-            className="bg-white rounded-2xl border border-brand-dark/10 p-6 hover:border-brand-orange/40 hover:bg-brand-orange/5 transition-colors"
-          >
-            <div className="font-heading font-bold text-lg uppercase tracking-tight text-brand-darker">Clone</div>
-            <div className="mt-2 text-sm text-brand-darker/60">Carregar arquivos e comparar nodes/links com nossa árvore.</div>
-          </Link>
         </div>
       </div>
     </StandardPage>
